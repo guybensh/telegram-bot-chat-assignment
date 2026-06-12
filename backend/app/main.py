@@ -1,7 +1,65 @@
-from fastapi import FastAPI
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Telegram Chat Backend")
+from .chat_service import ChatService
+from .config import get_settings
+from .connection_manager import ConnectionManager
+from .models import Message, SendMessageRequest
+from .store import ChatStore
+from .telegram_api import TelegramAPI
+from .telegram_service import TelegramService
+
+logging.basicConfig(level=logging.INFO)
+# httpx logs every request URL at INFO — which includes the bot token. Quiet it.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
+
+settings = get_settings()
+store = ChatStore()
+manager = ConnectionManager()
+telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)
+telegram = TelegramService(telegram_api, mock=settings.telegram_mode == "mock")
+chat = ChatService(store, manager, telegram)
+# The gateway pushes parsed incoming messages up to the chat domain, without
+# knowing what happens to them.
+telegram.set_handler(chat.handle_incoming)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start the chosen Telegram receive strategy on boot, tear it down on exit."""
+    if settings.telegram_mode == "mock":
+        logger.info("Mock mode: Telegram delivery simulated; no polling/webhook")
+    elif not settings.telegram_bot_token:
+        logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram integration disabled")
+    elif settings.telegram_mode == "webhook":
+        url = settings.telegram_webhook_url.rstrip("/") + settings.telegram_webhook_path
+        ok = await telegram_api.set_webhook(url, settings.telegram_webhook_secret or None)
+        logger.info("Webhook mode: setWebhook(%s) -> ok=%s", url, ok)
+    else:
+        # Polling mode needs no public URL; clear any stale webhook first so
+        # Telegram delivers via getUpdates.
+        await telegram_api.delete_webhook()
+        await telegram.start_polling()
+
+    try:
+        yield
+    finally:
+        await telegram.stop_polling()
+        await telegram_api.close()
+
+
+app = FastAPI(title="Telegram Chat Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -11,6 +69,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/messages", response_model=list[Message])
+async def get_messages():
+    """Return the current session's message history, ordered by timestamp."""
+    return await chat.get_history()
+
+
+@app.post("/messages", response_model=Message)
+async def post_message(payload: SendMessageRequest):
+    """Forward an outgoing message to the connected Telegram chat. The chat
+    service owns the processing; the route only translates HTTP <-> domain."""
+    return await chat.send_user_message(payload.id, payload.text, payload.timestamp)
+
+
+@app.post(settings.telegram_webhook_path)
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+):
+    """Inbound endpoint for Telegram webhook mode. Validates the optional shared
+    secret, then funnels the update through the same processing path as polling."""
+    if (
+        settings.telegram_webhook_secret
+        and x_telegram_bot_api_secret_token != settings.telegram_webhook_secret
+    ):
+        raise HTTPException(status_code=403, detail="Invalid secret token")
+    await telegram.process_update(await request.json())
+    return {"ok": True}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """Server-push channel: incoming messages and delivery receipts. The client
+    never sends over this socket, so the receive loop exists only to keep the
+    connection open and detect disconnects."""
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket)
