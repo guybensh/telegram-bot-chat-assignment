@@ -21,11 +21,34 @@ from .telegram_poller import TelegramPoller
 from .telegram_service import TelegramService
 
 logging.basicConfig(level=logging.INFO)
-# httpx logs every request URL at INFO — which includes the bot token. Quiet it.
-logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+class _RedactTokenFilter(logging.Filter):
+    """Redacts the bot token from log records. httpx logs each request URL at
+    INFO (which includes the token); we keep those logs — they show the live
+    getUpdates/sendMessage responses — but never leak the token."""
+
+    def __init__(self, token: str) -> None:
+        super().__init__()
+        self._token = token
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if self._token in message:
+            record.msg = message.replace(self._token, "<token>")
+            record.args = ()
+        return True
+
+
+# Surface httpx's request/response lines (the Telegram polling responses), with
+# the token redacted so it never lands in logs.
+if settings.telegram_bot_token:
+    logging.getLogger("httpx").addFilter(
+        _RedactTokenFilter(settings.telegram_bot_token)
+    )
 repository = InMemoryChatRepository()
 manager = ConnectionManager()
 telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)

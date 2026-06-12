@@ -78,6 +78,7 @@ class ChatService:
 
         await self._repository.update_status(chat_id, message.id, status)
         message.status = status
+        logger.info("Outgoing [chat %s] %r -> %s", chat_id, text[:200], status.value)
         await self._manager.broadcast(
             {
                 "type": "receipt",
@@ -121,6 +122,9 @@ class ChatService:
             status=Status.RECEIVED,
         )
         await self._repository.add(incoming.chat_id, message)
+        logger.info(
+            "Incoming [chat %s] %r", incoming.chat_id, incoming.text[:200]
+        )
         await self._manager.broadcast(
             {"type": "message", **message.model_dump(mode="json")}
         )
