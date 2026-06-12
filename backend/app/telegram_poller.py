@@ -56,10 +56,17 @@ class TelegramPoller:
                     # Back off so we don't hammer the API.
                     await asyncio.sleep(3)
                     continue
+                if updates:
+                    logger.info("Received %d update(s) via POLLING", len(updates))
                 for update in updates:
                     self._offset = update["update_id"] + 1
                     incoming = self._telegram.process_update(update)
                     if incoming is not None:
+                        logger.info(
+                            "Update via POLLING (update_id=%s, chat=%s)",
+                            update["update_id"],
+                            incoming.chat_id,
+                        )
                         await self._chat.handle_incoming(incoming)
             except asyncio.CancelledError:
                 logger.info("Telegram polling stopped")

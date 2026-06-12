@@ -152,6 +152,7 @@ async def telegram_webhook(
         raise HTTPException(status_code=403, detail="Invalid secret token")
     incoming = telegram.process_update(await request.json())
     if incoming is not None:
+        logger.info("Update via WEBHOOK (chat=%s)", incoming.chat_id)
         await chat.handle_incoming(incoming)
     return {"ok": True}
 
