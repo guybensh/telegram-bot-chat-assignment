@@ -1,21 +1,19 @@
 import asyncio
 
+from .chat_repository import ChatRepository
 from .models import Message, Status
 
-# The assignment accepts a single active conversation. This is a *policy*, not a
-# structural limit: storage and routing are already per-chat_id, so allowing
-# many conversations is just flipping this off (and dropping the check below).
-_SINGLE_ACTIVE_CHAT = True
 
+class InMemoryChatRepository(ChatRepository):
+    """In-memory implementation of the chat DAL.
 
-class ChatStore:
-    """In-memory message store, organized per conversation (`chat_id`).
+    Messages are organized per conversation (`chat_id`). All mutation goes
+    through one asyncio.Lock so concurrent producers (REST handler, Telegram
+    poller, webhook) never interleave a read/modify/write — and so the
+    active-chat admission in `register_chat` is race-free.
 
-    This is the swappable persistence layer from the architecture plan: every
-    method is async and the interface is small, so a DB-backed implementation
-    drops in with no caller changes. All mutation goes through one asyncio.Lock
-    so concurrent producers (REST handler, Telegram poller, webhook) never
-    interleave a read/modify/write.
+    Swapping this for a DB-backed repository (SQLAlchemy/Postgres) means
+    implementing the same `ChatRepository` interface; nothing else changes.
     """
 
     def __init__(self) -> None:
@@ -24,16 +22,11 @@ class ChatStore:
         self._active: set[int] = set()
         self._lock = asyncio.Lock()
 
-    # --- conversation policy --------------------------------------------
-
-    async def register_chat(self, chat_id: int) -> bool:
-        """Admit a conversation under the single-active-chat policy. Returns
-        True if `chat_id` is active (already known, or newly admitted), False if
-        a different chat is already active and this one must be ignored."""
+    async def register_chat(self, chat_id: int, max_active: int) -> bool:
         async with self._lock:
             if chat_id in self._active:
                 return True
-            if _SINGLE_ACTIVE_CHAT and self._active:
+            if len(self._active) >= max_active:
                 return False
             self._active.add(chat_id)
             self._conversations.setdefault(chat_id, [])
@@ -46,8 +39,6 @@ class ChatStore:
     async def active_chats(self) -> list[int]:
         async with self._lock:
             return sorted(self._active)
-
-    # --- messages --------------------------------------------------------
 
     async def add(self, message: Message) -> Message:
         async with self._lock:
@@ -71,8 +62,6 @@ class ChatStore:
             )
 
     async def reset(self) -> None:
-        """Clear all conversations, messages, and active-chat state. A dev/admin
-        affordance for re-testing the no-conversation flow without a restart."""
         async with self._lock:
             self._conversations.clear()
             self._by_id.clear()

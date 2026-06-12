@@ -21,9 +21,10 @@ the cross-layer contract.
 
 ```
 backend/app/
-  config.py              Settings from env / .env (token, mode, webhook config)
+  config.py              Settings from env / .env (token, mode, webhook, max chats)
   models.py              Message + Sender/Status enums; SendMessageRequest
-  store.py               In-memory message store + single-active-chat state (async-locked)
+  chat_repository.py     ChatRepository — the storage interface (DAL)
+  store.py               InMemoryChatRepository — in-memory DAL implementation
   connection_manager.py  WebSocket client registry + broadcast
   telegram_api.py        Thin HTTP wrapper over the Telegram Bot API
   telegram_service.py    Isolated Telegram gateway: send + receive/parse updates
@@ -34,7 +35,7 @@ backend/app/
 Dependency direction is one-way:
 
 ```
-main → ChatService → { ChatStore, ConnectionManager, TelegramService → TelegramAPI }
+main → ChatService → { ChatRepository (DAL), ConnectionManager, TelegramService → TelegramAPI }
 ```
 
 `TelegramService` pushes parsed incoming messages **up** to `ChatService` via a
@@ -50,9 +51,11 @@ registered handler callback, so the gateway never learns what happens to them.
   `send_message(...)`, `handle_incoming(IncomingMessage)`, `get_history(chat_id)`,
   `list_conversations()`, `reset()`. It coordinates the store, the connection
   manager, and the gateway.
-- **`ChatStore`** — in-memory messages **keyed per conversation (`chat_id`)** plus
-  the set of active chats, all mutation behind an `asyncio.Lock`. DB-ready async
-  interface.
+- **`ChatRepository` (DAL)** — the storage interface the domain depends on.
+  `InMemoryChatRepository` (`store.py`) is the current implementation: messages
+  **keyed per conversation (`chat_id`)** plus the active-chat set, all mutation
+  behind an `asyncio.Lock`. A DB-backed repo implements the same interface — no
+  domain changes.
 - **`ConnectionManager`** — tracks connected agent clients, exposes
   `has_clients()`, and broadcasts events.
 - **`TelegramAPI`** — pure HTTP: `sendMessage`, `getUpdates`, `set/deleteWebhook`.
@@ -108,15 +111,15 @@ delivery.
 
 ## Single-active-chat (a policy, not a limit)
 
-A **conversation = one Telegram chat = one `chat_id`**. The "one remote
-participant" requirement lives in `ChatStore.register_chat`: the first chat to
-message the bot is admitted; a different chat returns `False` and is dropped by
-`ChatService.handle_incoming`. The check-and-set is inside the store's lock, so
-concurrent first-contacts can't both bind (no race). Outgoing sends are
-validated against the active set (`is_active_chat`); a send to an unknown chat
-is rejected. Because storage and routing are already keyed by `chat_id`,
-allowing **multiple** conversations is just flipping `_SINGLE_ACTIVE_CHAT` off
-in `store.py`.
+A **conversation = one Telegram chat = one `chat_id`**. The limit is
+**configurable** (`MAX_ACTIVE_CHATS`, default 1). `ChatRepository.register_chat`
+admits a chat if it's already active or there's capacity; otherwise it returns
+`False` and the message is dropped by `ChatService.handle_incoming`. The
+capacity check and admission happen atomically inside the repository's lock, so
+the limit can't be exceeded by a race. Outgoing sends are validated against the
+active set (`is_active_chat`); a send to an unknown chat is rejected. Raising
+`MAX_ACTIVE_CHATS` lets the back-office handle several users at once — storage
+and routing are already keyed by `chat_id`.
 
 ## Telegram modes (`TELEGRAM_MODE`)
 
@@ -144,6 +147,7 @@ Environment variables (see `.env.example`; `.env` is gitignored):
 - `TELEGRAM_MODE` — `poll` | `webhook` | `mock` (default `poll`).
 - `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` / `TELEGRAM_WEBHOOK_SECRET` —
   webhook mode only.
+- `MAX_ACTIVE_CHATS` — max simultaneous conversations (default `1`).
 
 ## Run
 
@@ -164,9 +168,9 @@ uvicorn app.main:app --reload                       # live, polling (reads ../.e
   status. The planned queue/worker split (`integration.md`) would return
   `pending` immediately and rely on the WS receipt; the client already supports
   that, so the change is backend-only.
-- **Single conversation** — one chat ↔ one participant, enforced as a *policy*
-  (`_SINGLE_ACTIVE_CHAT`); the model is multi-ready (messages and routing are
-  keyed by `chat_id`).
+- **Conversation limit is config** — `MAX_ACTIVE_CHATS` (default 1) caps active
+  conversations; the model is multi-ready (messages and routing are keyed by
+  `chat_id`), so raising it needs no code change.
 - **Agent must connect first** — incoming messages are rejected when no agent is
   connected, and dropped (not queued). "Deliver on next connect" would be a
   store-buffering change, not a policy change.

@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime
 
+from .chat_repository import ChatRepository
 from .connection_manager import ConnectionManager
 from .models import Message, Sender, Status
-from .store import ChatStore
 from .telegram_service import IncomingMessage, TelegramService
 
 logger = logging.getLogger(__name__)
@@ -20,30 +20,34 @@ class ChatService:
     processed in each direction.
 
     It coordinates three collaborators that have no knowledge of one another:
-    the message store (state), the connection manager (agent clients), and
-    the Telegram gateway (delivery + receipt of updates).
+    the chat repository (DAL — state), the connection manager (agent clients),
+    and the Telegram gateway (delivery + receipt of updates). It depends on the
+    `ChatRepository` interface, not a concrete store, so persistence is
+    swappable. The active-conversation limit is injected from configuration.
     """
 
     def __init__(
         self,
-        store: ChatStore,
+        repository: ChatRepository,
         manager: ConnectionManager,
         telegram: TelegramService,
+        max_active_chats: int = 1,
     ) -> None:
-        self._store = store
+        self._repository = repository
         self._manager = manager
         self._telegram = telegram
+        self._max_active_chats = max_active_chats
 
     async def list_conversations(self) -> list[int]:
-        return await self._store.active_chats()
+        return await self._repository.active_chats()
 
     async def get_history(self, chat_id: int) -> list[Message]:
-        return await self._store.list(chat_id)
+        return await self._repository.list(chat_id)
 
     async def reset(self) -> None:
         """Admin/dev: clear all conversation state and tell every connected
         client to reset, so the no-active-chat flow can be exercised again."""
-        await self._store.reset()
+        await self._repository.reset()
         await self._manager.broadcast({"type": "reset"})
 
     # --- outgoing: agent -> Telegram participant ------------------------
@@ -56,7 +60,7 @@ class ChatService:
 
         Raises NoActiveConversationError if `chat_id` is not an active chat — the
         bot can only reply within a conversation the participant started."""
-        if not await self._store.is_active_chat(chat_id):
+        if not await self._repository.is_active_chat(chat_id):
             raise NoActiveConversationError(chat_id)
 
         message = Message(
@@ -67,12 +71,12 @@ class ChatService:
             sender=Sender.AGENT,
             status=Status.PENDING,
         )
-        await self._store.add(message)
+        await self._repository.add(message)
 
         delivered = await self._telegram.send(chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
-        await self._store.update_status(message.id, status)
+        await self._repository.update_status(message.id, status)
         message.status = status
         await self._manager.broadcast(
             {
@@ -88,8 +92,8 @@ class ChatService:
 
     async def handle_incoming(self, incoming: IncomingMessage) -> None:
         """Process a message from a Telegram participant: an agent must be
-        connected first, then enforce single-active-chat, store it, and push it
-        to every connected client."""
+        connected first, then admit the conversation (subject to the configured
+        limit), store it, and push it to every connected client."""
         # The agent must connect first — reject if no client is present.
         if not self._manager.has_clients():
             logger.info(
@@ -98,8 +102,14 @@ class ChatService:
             )
             return
 
-        if not await self._store.register_chat(incoming.chat_id):
-            logger.info("Ignoring message from non-active chat %s", incoming.chat_id)
+        if not await self._repository.register_chat(
+            incoming.chat_id, self._max_active_chats
+        ):
+            logger.info(
+                "At active-chat capacity (%d); ignoring chat %s",
+                self._max_active_chats,
+                incoming.chat_id,
+            )
             return
 
         message = Message(
@@ -110,7 +120,7 @@ class ChatService:
             sender=Sender.USER,
             status=Status.RECEIVED,
         )
-        await self._store.add(message)
+        await self._repository.add(message)
         await self._manager.broadcast(
             {"type": "message", **message.model_dump(mode="json")}
         )

@@ -15,7 +15,7 @@ from .chat_service import ChatService, NoActiveConversationError
 from .config import get_settings
 from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
-from .store import ChatStore
+from .store import InMemoryChatRepository
 from .telegram_api import TelegramAPI
 from .telegram_service import TelegramService
 
@@ -25,11 +25,13 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-store = ChatStore()
+repository = InMemoryChatRepository()
 manager = ConnectionManager()
 telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)
 telegram = TelegramService(telegram_api, mock=settings.telegram_mode == "mock")
-chat = ChatService(store, manager, telegram)
+chat = ChatService(
+    repository, manager, telegram, max_active_chats=settings.max_active_chats
+)
 # The gateway pushes parsed incoming messages up to the chat domain, without
 # knowing what happens to them.
 telegram.set_handler(chat.handle_incoming)
