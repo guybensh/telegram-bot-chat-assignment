@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     telegram_api_base: str = "https://api.telegram.org"
 
+    # Maximum number of simultaneous active conversations the bot will accept.
+    # 1 keeps the assignment's single-participant behavior; raise it (env
+    # MAX_ACTIVE_CHATS) to let the back-office handle several users at once.
+    max_active_chats: int = 1
+
     # Webhook mode only. telegram_webhook_url is the PUBLIC base (e.g. an ngrok
     # https URL); the path is appended to form the registered webhook endpoint.
     telegram_webhook_url: str = ""

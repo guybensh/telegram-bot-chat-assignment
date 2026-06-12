@@ -21,38 +21,52 @@ the cross-layer contract.
 
 ```
 backend/app/
-  config.py              Settings from env / .env (token, mode, webhook config)
+  config.py              Settings from env / .env (token, mode, webhook, max chats)
   models.py              Message + Sender/Status enums; SendMessageRequest
-  store.py               In-memory message store + single-active-chat state (async-locked)
   connection_manager.py  WebSocket client registry + broadcast
   telegram_api.py        Thin HTTP wrapper over the Telegram Bot API
-  telegram_service.py    Isolated Telegram gateway: send + receive/parse updates
-  chat_service.py        The chat domain: how incoming/outgoing messages are processed
+  telegram_service.py    Isolated Telegram gateway: send + parse updates
+  telegram_poller.py     Pull driver: poll/mock loop → parse → domain
   main.py                FastAPI app: routes, wiring, lifespan
+  chat/                  The chat domain
+    chat_service.py        How incoming/outgoing messages are processed
+    repository/            Data-access layer (DAL)
+      chat_repository.py            ChatRepository — the storage interface
+      in_memory_chat_repository.py  InMemoryChatRepository — in-memory impl
 ```
 
 Dependency direction is one-way:
 
 ```
-main → ChatService → { ChatStore, ConnectionManager, TelegramService → TelegramAPI }
+main → ChatService → { ChatRepository (DAL), ConnectionManager, TelegramService → TelegramAPI }
+main → TelegramPoller → { TelegramService, ChatService }
 ```
 
-`TelegramService` pushes parsed incoming messages **up** to `ChatService` via a
-registered handler callback, so the gateway never learns what happens to them.
+`TelegramService` is a pure gateway with **no reference to the chat domain**: it
+parses an update and returns an `IncomingMessage`. The `TelegramPoller` (poll
+/ mock) and the webhook route are what pass that parsed message to
+`ChatService` — coordination lives at the edges, not inside the gateway.
 
 ## Roles
 
-- **`TelegramService` (gateway)** — talks to Telegram and nothing else:
-  `send(chat_id, text)`, `process_update(raw)` (parse a raw update into a clean
-  `IncomingMessage` and forward it to the handler), and the polling loop. It
-  holds no store, no clients, and no conversation policy.
+- **`TelegramService` (gateway)** — pure Telegram I/O + parsing:
+  `send(chat_id, text)`, `get_updates(offset)`, and `process_update(raw)` which
+  parses a raw update into an `IncomingMessage` (or `None`) and **returns** it.
+  No store, no clients, no domain handler, no background loop.
+- **`TelegramPoller` (pull driver)** — owns the background pull loop (real
+  `getUpdates` polling, or the mock feed standing in for it); fetches/synthesizes
+  updates, parses via the gateway, and passes each `IncomingMessage` to
+  `ChatService.handle_incoming`. (Webhook mode is push — the webhook route does
+  this inline, no loop.)
 - **`ChatService` (domain)** — the single place that decides processing:
   `send_message(...)`, `handle_incoming(IncomingMessage)`, `get_history(chat_id)`,
   `list_conversations()`, `reset()`. It coordinates the store, the connection
   manager, and the gateway.
-- **`ChatStore`** — in-memory messages **keyed per conversation (`chat_id`)** plus
-  the set of active chats, all mutation behind an `asyncio.Lock`. DB-ready async
-  interface.
+- **`ChatRepository` (DAL)** — the storage interface the domain depends on.
+  `InMemoryChatRepository` is the current implementation: messages
+  **keyed per conversation (`chat_id`)** plus the active-chat set, all mutation
+  behind an `asyncio.Lock`. A DB-backed repo implements the same interface — no
+  domain changes.
 - **`ConnectionManager`** — tracks connected agent clients, exposes
   `has_clients()`, and broadcasts events.
 - **`TelegramAPI`** — pure HTTP: `sendMessage`, `getUpdates`, `set/deleteWebhook`.
@@ -98,8 +112,9 @@ delivery.
 
 ### Incoming (Telegram user → agent clients) — `ChatService.handle_incoming`
 
-1. The gateway (poller **or** webhook route) parses the update into an
-   `IncomingMessage` and calls the handler.
+1. The `TelegramPoller` (poll/mock) **or** the webhook route gets a raw
+   update, parses it via the gateway into an `IncomingMessage`, and passes it to
+   `handle_incoming`.
 2. **Reject if no agent is connected** (`ConnectionManager.has_clients()`) — the
    bot must not accept a conversation when no one is there.
 3. Enforce single-active-chat (see below); drop if it's a different chat.
@@ -108,15 +123,15 @@ delivery.
 
 ## Single-active-chat (a policy, not a limit)
 
-A **conversation = one Telegram chat = one `chat_id`**. The "one remote
-participant" requirement lives in `ChatStore.register_chat`: the first chat to
-message the bot is admitted; a different chat returns `False` and is dropped by
-`ChatService.handle_incoming`. The check-and-set is inside the store's lock, so
-concurrent first-contacts can't both bind (no race). Outgoing sends are
-validated against the active set (`is_active_chat`); a send to an unknown chat
-is rejected. Because storage and routing are already keyed by `chat_id`,
-allowing **multiple** conversations is just flipping `_SINGLE_ACTIVE_CHAT` off
-in `store.py`.
+A **conversation = one Telegram chat = one `chat_id`**. The limit is
+**configurable** (`MAX_ACTIVE_CHATS`, default 1). `ChatRepository.register_chat`
+admits a chat if it's already active or there's capacity; otherwise it returns
+`False` and the message is dropped by `ChatService.handle_incoming`. The
+capacity check and admission happen atomically inside the repository's lock, so
+the limit can't be exceeded by a race. Outgoing sends are validated against the
+active set (`is_active_chat`); a send to an unknown chat is rejected. Raising
+`MAX_ACTIVE_CHATS` lets the back-office handle several users at once — storage
+and routing are already keyed by `chat_id`.
 
 ## Telegram modes (`TELEGRAM_MODE`)
 
@@ -124,10 +139,10 @@ in `store.py`.
 |---|---|---|
 | `poll` (default) | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed |
 | `webhook` | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
-| `mock` | none | Local testing with no live bot — outgoing sends are simulated as delivered |
+| `mock` | `TelegramPoller` mock feed | Local testing with no live bot — outgoing sends are simulated, a fake user message arrives every 10s |
 
-Both real receive paths funnel into the same `process_update` → handler →
-`ChatService`, so switching modes changes only how updates arrive.
+All receive paths converge on `gateway.process_update` → `chat.handle_incoming`,
+so switching modes changes only how raw updates are obtained.
 
 ## Concurrency & resilience
 
@@ -144,6 +159,7 @@ Environment variables (see `.env.example`; `.env` is gitignored):
 - `TELEGRAM_MODE` — `poll` | `webhook` | `mock` (default `poll`).
 - `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` / `TELEGRAM_WEBHOOK_SECRET` —
   webhook mode only.
+- `MAX_ACTIVE_CHATS` — max simultaneous conversations (default `1`).
 
 ## Run
 
@@ -164,9 +180,9 @@ uvicorn app.main:app --reload                       # live, polling (reads ../.e
   status. The planned queue/worker split (`integration.md`) would return
   `pending` immediately and rely on the WS receipt; the client already supports
   that, so the change is backend-only.
-- **Single conversation** — one chat ↔ one participant, enforced as a *policy*
-  (`_SINGLE_ACTIVE_CHAT`); the model is multi-ready (messages and routing are
-  keyed by `chat_id`).
+- **Conversation limit is config** — `MAX_ACTIVE_CHATS` (default 1) caps active
+  conversations; the model is multi-ready (messages and routing are keyed by
+  `chat_id`), so raising it needs no code change.
 - **Agent must connect first** — incoming messages are rejected when no agent is
   connected, and dropped (not queued). "Deliver on next connect" would be a
   store-buffering change, not a policy change.

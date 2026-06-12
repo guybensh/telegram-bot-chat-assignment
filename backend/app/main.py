@@ -11,12 +11,13 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 
-from .chat_service import ChatService, NoActiveConversationError
+from .chat import ChatService, NoActiveConversationError
+from .chat.repository import InMemoryChatRepository
 from .config import get_settings
 from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
-from .store import ChatStore
 from .telegram_api import TelegramAPI
+from .telegram_poller import TelegramPoller
 from .telegram_service import TelegramService
 
 logging.basicConfig(level=logging.INFO)
@@ -25,14 +26,16 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-store = ChatStore()
+repository = InMemoryChatRepository()
 manager = ConnectionManager()
 telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)
 telegram = TelegramService(telegram_api, mock=settings.telegram_mode == "mock")
-chat = ChatService(store, manager, telegram)
-# The gateway pushes parsed incoming messages up to the chat domain, without
-# knowing what happens to them.
-telegram.set_handler(chat.handle_incoming)
+chat = ChatService(
+    repository, manager, telegram, max_active_chats=settings.max_active_chats
+)
+# Drives the pull mechanism: fetches/parses updates in a loop and passes each
+# to chat.handle_incoming. (Webhook mode delivers inline in the webhook route.)
+poller = TelegramPoller(telegram, chat)
 
 
 @asynccontextmanager
@@ -40,7 +43,7 @@ async def lifespan(app: FastAPI):
     """Start the chosen Telegram receive strategy on boot, tear it down on exit."""
     if settings.telegram_mode == "mock":
         logger.info("Mock mode: simulated delivery + a fake incoming message every 10s")
-        await telegram.start_mock_feed()
+        await poller.start_mock_feed()
     elif not settings.telegram_bot_token:
         logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram integration disabled")
     elif settings.telegram_mode == "webhook":
@@ -51,12 +54,12 @@ async def lifespan(app: FastAPI):
         # Polling mode needs no public URL; clear any stale webhook first so
         # Telegram delivers via getUpdates.
         await telegram_api.delete_webhook()
-        await telegram.start_polling()
+        await poller.start_polling()
 
     try:
         yield
     finally:
-        await telegram.stop_polling()
+        await poller.stop()
         await telegram_api.close()
 
 
@@ -124,7 +127,9 @@ async def telegram_webhook(
         and x_telegram_bot_api_secret_token != settings.telegram_webhook_secret
     ):
         raise HTTPException(status_code=403, detail="Invalid secret token")
-    await telegram.process_update(await request.json())
+    incoming = telegram.process_update(await request.json())
+    if incoming is not None:
+        await chat.handle_incoming(incoming)
     return {"ok": True}
 
 
