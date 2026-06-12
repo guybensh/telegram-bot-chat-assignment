@@ -26,7 +26,7 @@ backend/app/
   connection_manager.py  WebSocket client registry + broadcast
   telegram_api.py        Thin HTTP wrapper over the Telegram Bot API
   telegram_service.py    Isolated Telegram gateway: send + parse updates
-  telegram_receiver.py   Receive coordinator: poll/mock loop → parse → domain
+  telegram_poller.py     Pull driver: poll/mock loop → parse → domain
   main.py                FastAPI app: routes, wiring, lifespan
   chat/                  The chat domain
     chat_service.py        How incoming/outgoing messages are processed
@@ -39,11 +39,11 @@ Dependency direction is one-way:
 
 ```
 main → ChatService → { ChatRepository (DAL), ConnectionManager, TelegramService → TelegramAPI }
-main → TelegramReceiver → { TelegramService, ChatService }
+main → TelegramPoller → { TelegramService, ChatService }
 ```
 
 `TelegramService` is a pure gateway with **no reference to the chat domain**: it
-parses an update and returns an `IncomingMessage`. The `TelegramReceiver` (poll
+parses an update and returns an `IncomingMessage`. The `TelegramPoller` (poll
 / mock) and the webhook route are what pass that parsed message to
 `ChatService` — coordination lives at the edges, not inside the gateway.
 
@@ -53,10 +53,11 @@ parses an update and returns an `IncomingMessage`. The `TelegramReceiver` (poll
   `send(chat_id, text)`, `get_updates(offset)`, and `process_update(raw)` which
   parses a raw update into an `IncomingMessage` (or `None`) and **returns** it.
   No store, no clients, no domain handler, no background loop.
-- **`TelegramReceiver` (receive coordinator)** — owns the background receive
-  loop (real polling or the mock feed); fetches/synthesizes updates, parses via
-  the gateway, and passes each `IncomingMessage` to `ChatService.handle_incoming`.
-  The webhook route does the same inline for webhook mode.
+- **`TelegramPoller` (pull driver)** — owns the background pull loop (real
+  `getUpdates` polling, or the mock feed standing in for it); fetches/synthesizes
+  updates, parses via the gateway, and passes each `IncomingMessage` to
+  `ChatService.handle_incoming`. (Webhook mode is push — the webhook route does
+  this inline, no loop.)
 - **`ChatService` (domain)** — the single place that decides processing:
   `send_message(...)`, `handle_incoming(IncomingMessage)`, `get_history(chat_id)`,
   `list_conversations()`, `reset()`. It coordinates the store, the connection
@@ -111,7 +112,7 @@ delivery.
 
 ### Incoming (Telegram user → agent clients) — `ChatService.handle_incoming`
 
-1. The `TelegramReceiver` (poll/mock) **or** the webhook route gets a raw
+1. The `TelegramPoller` (poll/mock) **or** the webhook route gets a raw
    update, parses it via the gateway into an `IncomingMessage`, and passes it to
    `handle_incoming`.
 2. **Reject if no agent is connected** (`ConnectionManager.has_clients()`) — the
@@ -138,7 +139,7 @@ and routing are already keyed by `chat_id`.
 |---|---|---|
 | `poll` (default) | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed |
 | `webhook` | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
-| `mock` | `TelegramReceiver` mock feed | Local testing with no live bot — outgoing sends are simulated, a fake user message arrives every 10s |
+| `mock` | `TelegramPoller` mock feed | Local testing with no live bot — outgoing sends are simulated, a fake user message arrives every 10s |
 
 All receive paths converge on `gateway.process_update` → `chat.handle_incoming`,
 so switching modes changes only how raw updates are obtained.

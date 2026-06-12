@@ -12,14 +12,17 @@ logger = logging.getLogger(__name__)
 _MOCK_CHAT_ID = 10_000_001
 
 
-class TelegramReceiver:
-    """Drives incoming Telegram updates into the chat domain.
+class TelegramPoller:
+    """Background driver for the *pull* receive mechanism.
 
-    It owns the background receive loop (real polling, or the mock feed), asks
-    the gateway to parse each update, and passes every parsed `IncomingMessage`
-    to `ChatService.handle_incoming`. This is the single place that wires the
-    gateway to the domain for the receive direction — the webhook route plays
-    the same role for webhook mode. The gateway itself stays domain-agnostic.
+    Telegram delivers updates two ways: webhook (push — handled inline in the
+    webhook route) and getUpdates (pull — we must call it in a loop). This owns
+    that pull loop: it fetches updates, asks the gateway to parse them, and
+    passes each parsed `IncomingMessage` to `ChatService.handle_incoming`. It
+    also holds the loop's state (offset, backoff) and task lifecycle.
+
+    The mock feed is a stand-in for the same pull mechanism — a background loop
+    that produces synthetic incoming messages — so it lives here too.
     """
 
     def __init__(self, telegram: TelegramService, chat: ChatService) -> None:
