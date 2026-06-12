@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "dev:mock": "VITE_USE_MOCK=true vite",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -28,9 +28,45 @@ body {
 
 /* Header */
 .chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px;
   border-bottom: 1px solid #ddd;
   background: #f9fafb;
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+/* Connection status indicator */
+.connection-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #666;
+}
+
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.connection-status.open .connection-dot {
+  background: #34c759;
+}
+
+.connection-status.connecting .connection-dot {
+  background: #f5a623;
+}
+
+.connection-status.closed .connection-dot {
+  background: #e0245e;
 }
 
 /* Messages area */
@@ -81,12 +117,39 @@ body {
   white-space: pre-wrap;
 }
 
-/* Timestamp */
-.chat-timestamp {
+/* Meta row: timestamp + delivery status */
+.chat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
   margin-top: 4px;
+}
+
+.chat-timestamp {
   font-size: 11px;
   color: #666;
-  text-align: right;
+}
+
+.chat-status {
+  font-size: 11px;
+  color: #4c8bf5;
+}
+
+.chat-status.failed {
+  color: #e0245e;
+}
+
+.chat-status.pending {
+  color: #999;
+}
+
+/* Empty state */
+.chat-empty {
+  color: #999;
+  font-size: 14px;
+  text-align: center;
+  margin-top: 24px;
 }
 
 /* Input */
