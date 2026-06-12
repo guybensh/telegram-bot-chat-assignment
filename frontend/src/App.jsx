@@ -1,58 +1,20 @@
-import { useState } from "react";
 import "./index.css";
+import { useChat } from "./hooks/useChat";
+import { ChatHeader } from "./components/ChatHeader";
+import { MessageList } from "./components/MessageList";
+import { MessageInput } from "./components/MessageInput";
 
+// Composition root: wire the chat state from useChat into the presentational
+// components. App holds no logic of its own, which keeps the data flow obvious.
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-
-  const sendMessage = () => {
-    if (!input.trim()) return;
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        text: input,
-        timestamp: new Date().toISOString(),
-        direction: "outgoing",
-      },
-    ]);
-
-    setInput("");
-  };
+  const { messages, connectionStatus, send } = useChat();
 
   return (
     <div className="chat-page">
       <div className="chat-container">
-        <header className="chat-header">
-          <h2>Telegram Chat</h2>
-        </header>
-
-        <div className="chat-messages">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`chat-message outgoing`}
-            >
-              <div className="chat-bubble">
-                <div className="chat-text">{msg.text}</div>
-                <div className="chat-timestamp">
-                  {new Date(msg.timestamp).toLocaleTimeString()}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="chat-input">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type a message..."
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          />
-          <button onClick={sendMessage}>Send</button>
-        </div>
+        <ChatHeader connectionStatus={connectionStatus} />
+        <MessageList messages={messages} />
+        <MessageInput onSend={send} />
       </div>
     </div>
   );
