@@ -1,0 +1,10 @@
+# Core API framework + ASGI server.
+# uvicorn[standard] pulls in websockets (needed for the WS channel)
+# and watchfiles (needed for --reload).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Add as you implement the rest of the backend, e.g.:
+# python-telegram-bot==21.9   # Telegram bot integration
+# SQLAlchemy==2.0.36          # persistence layer (sessions / messages)
+# aiosqlite==0.20.0           # async SQLite driver for local dev

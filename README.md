@@ -88,6 +88,7 @@ Bash
 cd backend
 python -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
@@ -104,6 +105,30 @@ npm run dev
 
 For a streamlined setup, you can run the entire system using Docker Compose. This ensures all dependencies and environment configurations are handled automatically.
 
-1. **Build and start the containers:**
+1. **Configure the bot token:**
+   ```bash
+   cp .env.example .env
+   # then edit .env and set TELEGRAM_BOT_TOKEN
+   ```
+
+2. **Build and start the containers:**
    ```bash
    docker-compose up --build
+   ```
+
+This brings up two services with hot reload enabled (source is mounted into the containers):
+
+| Service | URL | Notes |
+|---|---|---|
+| Frontend | http://localhost:5173 | Vite dev server (React) |
+| Backend | http://localhost:8000 | FastAPI; health check at `/health` |
+
+The frontend reads the backend URL from the `VITE_API_URL` environment variable
+(`import.meta.env.VITE_API_URL`), which defaults to `http://localhost:8000` in
+`docker-compose.yml`.
+
+To stop and remove the containers:
+
+```bash
+docker-compose down
+```
