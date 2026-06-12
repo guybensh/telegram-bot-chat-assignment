@@ -11,7 +11,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 
-from .chat_service import ChatService
+from .chat_service import ChatService, NoActiveConversationError
 from .config import get_settings
 from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
@@ -39,7 +39,8 @@ telegram.set_handler(chat.handle_incoming)
 async def lifespan(app: FastAPI):
     """Start the chosen Telegram receive strategy on boot, tear it down on exit."""
     if settings.telegram_mode == "mock":
-        logger.info("Mock mode: Telegram delivery simulated; no polling/webhook")
+        logger.info("Mock mode: simulated delivery + a fake incoming message every 10s")
+        await telegram.start_mock_feed()
     elif not settings.telegram_bot_token:
         logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram integration disabled")
     elif settings.telegram_mode == "webhook":
@@ -75,17 +76,40 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/admin/reset")
+async def admin_reset():
+    """Dev/admin: clear all conversations so the 'no active chat' flow can be
+    re-tested without restarting the server."""
+    await chat.reset()
+    return {"status": "reset"}
+
+
+@app.get("/conversations")
+async def get_conversations():
+    """List the active conversations (chat_ids) so the client knows what exists
+    and which chat to reply to."""
+    return [{"chat_id": chat_id} for chat_id in await chat.list_conversations()]
+
+
 @app.get("/messages", response_model=list[Message])
-async def get_messages():
-    """Return the current session's message history, ordered by timestamp."""
-    return await chat.get_history()
+async def get_messages(chat_id: int):
+    """Return one conversation's message history, ordered by timestamp."""
+    return await chat.get_history(chat_id)
 
 
 @app.post("/messages", response_model=Message)
 async def post_message(payload: SendMessageRequest):
-    """Forward an outgoing message to the connected Telegram chat. The chat
-    service owns the processing; the route only translates HTTP <-> domain."""
-    return await chat.send_user_message(payload.id, payload.text, payload.timestamp)
+    """Forward an outgoing message to the given conversation. The chat service
+    owns the processing; the route only translates HTTP <-> domain."""
+    try:
+        return await chat.send_message(
+            payload.id, payload.chat_id, payload.text, payload.timestamp
+        )
+    except NoActiveConversationError:
+        raise HTTPException(
+            status_code=409,
+            detail="No active conversation for this chat_id — the participant must message the bot first",
+        )
 
 
 @app.post(settings.telegram_webhook_path)

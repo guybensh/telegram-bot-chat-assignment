@@ -1,6 +1,7 @@
-// Renders a single chat bubble. The bubble side is driven by `sender` ("user" =
-// our outgoing messages, "bot" = the incoming Telegram bot messages) and mapped
-// to the existing CSS classes; delivery ticks show only on our own messages.
+// Renders a single chat bubble. Only "user" (the remote Telegram user) is
+// incoming; everything from our side — "agent" (the human) and the reserved
+// "bot" (future automated replies) — is outgoing. Mapped to the existing CSS
+// classes; delivery ticks show only on our own messages.
 const STATUS_LABEL = {
   pending: "🕓",
   sent: "✓",
@@ -16,7 +17,7 @@ function formatTime(timestamp) {
 }
 
 export function Message({ message }) {
-  const isOutgoing = message.sender === "user";
+  const isOutgoing = message.sender !== "user";
   return (
     <div className={`chat-message ${isOutgoing ? "outgoing" : "incoming"}`}>
       <div className="chat-bubble">

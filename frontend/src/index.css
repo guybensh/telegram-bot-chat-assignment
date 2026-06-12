@@ -41,6 +41,28 @@ body {
   font-size: 18px;
 }
 
+/* Header right-side controls */
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reset-button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #666;
+  cursor: pointer;
+}
+
+.reset-button:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
 /* Connection status indicator */
 .connection-status {
   display: inline-flex;
@@ -184,6 +206,13 @@ body {
   cursor: pointer;
 }
 
-.chat-input button:hover {
+.chat-input button:hover:not(:disabled) {
   background: #3a78d8;
+}
+
+.chat-input input:disabled,
+.chat-input button:disabled {
+  background: #f0f0f0;
+  color: #aaa;
+  cursor: not-allowed;
 }

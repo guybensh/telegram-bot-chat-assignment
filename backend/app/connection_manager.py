@@ -7,11 +7,12 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
-    """Tracks active WebSocket clients and broadcasts server-push events.
+    """Tracks connected agent clients and broadcasts server-push events.
 
-    The client uses the socket purely as a receive channel (it sends via REST),
-    so we only ever push. Multiple browser tabs map to multiple sockets and all
-    stay in sync via broadcast.
+    A client uses the socket purely as a receive channel (it sends via REST),
+    so we only ever push. Events carry their own `chat_id`, so a client routes
+    each one to the right conversation; with one agent console, broadcasting to
+    every connected client keeps all tabs in sync.
     """
 
     def __init__(self) -> None:
@@ -26,6 +27,11 @@ class ConnectionManager:
     async def disconnect(self, websocket: WebSocket) -> None:
         async with self._lock:
             self._connections.discard(websocket)
+
+    def has_clients(self) -> bool:
+        """Whether any agent is currently connected. Used to gate incoming
+        messages — don't accept a conversation when no agent is there."""
+        return bool(self._connections)
 
     async def broadcast(self, event: dict) -> None:
         async with self._lock:

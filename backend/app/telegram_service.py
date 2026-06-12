@@ -8,6 +8,10 @@ from .telegram_api import TelegramAPI
 
 logger = logging.getLogger(__name__)
 
+# Fixed chat id used by the mock feed so its messages bind to (and stay on) a
+# single simulated participant, exactly like a real chat would.
+_MOCK_CHAT_ID = 10_000_001
+
 
 @dataclass
 class IncomingMessage:
@@ -95,6 +99,37 @@ class TelegramService:
                 ),
             )
         )
+
+    # --- mock receive strategy ------------------------------------------
+
+    async def start_mock_feed(self, interval_seconds: int = 10) -> None:
+        """Mock mode only: synthesize an incoming bot message on a fixed
+        interval, pushed through the same handler as a real update. Lets the
+        incoming flow be demoed live without a Telegram bot."""
+        self._poll_task = asyncio.create_task(self._mock_loop(interval_seconds))
+
+    async def _mock_loop(self, interval_seconds: int) -> None:
+        logger.info("Mock feed started: a bot message every %ss", interval_seconds)
+        counter = 0
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                counter += 1
+                if self._handler is None:
+                    continue
+                await self._handler(
+                    IncomingMessage(
+                        chat_id=_MOCK_CHAT_ID,
+                        message_id=counter,
+                        text=f"Mock message #{counter} from the user",
+                        timestamp=datetime.now(timezone.utc),
+                    )
+                )
+            except asyncio.CancelledError:
+                logger.info("Mock feed stopped")
+                raise
+            except Exception:
+                logger.exception("Mock feed iteration failed")
 
     # --- polling strategy ------------------------------------------------
 

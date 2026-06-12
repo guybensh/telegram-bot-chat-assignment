@@ -45,58 +45,78 @@ registered handler callback, so the gateway never learns what happens to them.
 - **`TelegramService` (gateway)** — talks to Telegram and nothing else:
   `send(chat_id, text)`, `process_update(raw)` (parse a raw update into a clean
   `IncomingMessage` and forward it to the handler), and the polling loop. It
-  holds no store, no clients, and no single-chat policy.
+  holds no store, no clients, and no conversation policy.
 - **`ChatService` (domain)** — the single place that decides processing:
-  `send_user_message(...)`, `handle_incoming(IncomingMessage)`, `get_history()`.
-  It coordinates the store, the connection manager, and the gateway.
-- **`ChatStore`** — in-memory messages + the one bound `chat_id`, all mutation
-  behind an `asyncio.Lock`. DB-ready async interface.
-- **`ConnectionManager`** — tracks WebSocket clients and broadcasts events.
+  `send_message(...)`, `handle_incoming(IncomingMessage)`, `get_history(chat_id)`,
+  `list_conversations()`, `reset()`. It coordinates the store, the connection
+  manager, and the gateway.
+- **`ChatStore`** — in-memory messages **keyed per conversation (`chat_id`)** plus
+  the set of active chats, all mutation behind an `asyncio.Lock`. DB-ready async
+  interface.
+- **`ConnectionManager`** — tracks connected agent clients, exposes
+  `has_clients()`, and broadcasts events.
 - **`TelegramAPI`** — pure HTTP: `sendMessage`, `getUpdates`, `set/deleteWebhook`.
 
 ## Message model & contract
 
-The single message shape (matches the frontend exactly):
+The single message shape (matches the frontend exactly). `chat_id` is the
+Telegram conversation it belongs to — a first-class field so the system extends
+from one conversation to many without a reshape:
 
 ```
-{ id, text, timestamp, sender: "user"|"bot", status }
+{ id, chat_id, text, timestamp, sender: "user"|"agent"|"bot", status }
 ```
+
+Senders: **`user`** = the remote Telegram human (incoming); **`agent`** = the
+back-office human, replying as the bot (outgoing — what we produce today);
+**`bot`** = an automated server reply (reserved, not produced yet).
 
 | Channel | Endpoint | Payload |
 |---|---|---|
-| Load history | `GET /messages` | → array of messages (ordered by timestamp) |
-| Send | `POST /messages` | full message object → the stored message |
-| Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, status}` |
+| List conversations | `GET /conversations` | → `[{ chat_id }]` |
+| Load history | `GET /messages?chat_id=<id>` | → array of messages (ordered by timestamp) |
+| Send | `POST /messages` | `{ id, chat_id, text, timestamp }` → the stored message (`409` if `chat_id` not active) |
+| Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, chat_id, status}` / `{type:"reset"}` |
 | Telegram in | `POST /telegram/webhook` | raw Telegram update (webhook mode) |
+| Admin reset | `POST /admin/reset` | clears all conversations (dev/admin) |
 
 The server is the **authority** on `sender`/`status`: `POST /messages` only
-trusts `id`/`text`/`timestamp`; it forces `sender="user"` and drives the status
-lifecycle itself, so a client can never post as the bot or fake delivery.
+trusts `id`/`chat_id`/`text`/`timestamp`; it forces `sender="agent"` and drives
+the status lifecycle itself, so a client can never post as the user/bot or fake
+delivery.
 
 ## Data flows
 
-### Outgoing (user → Telegram) — `ChatService.send_user_message`
+### Outgoing (agent → Telegram user) — `ChatService.send_message`
 
-1. Store the message as `pending`.
-2. Read the active `chat_id` from the store; ask the gateway to `send`.
-3. Record the outcome (`sent` / `failed`) and broadcast a `receipt` so every
+1. Reject with `NoActiveConversationError` (→ HTTP `409`) if `chat_id` isn't an
+   active conversation — the bot can only reply within a chat the user started.
+2. Store the message as `pending` with `sender="agent"`.
+3. Ask the gateway to `send` to that `chat_id`.
+4. Record the outcome (`sent` / `failed`) and broadcast a `receipt` so every
    connected client converges (the sending client also gets the HTTP response).
 
-### Incoming (Telegram → clients) — `ChatService.handle_incoming`
+### Incoming (Telegram user → agent clients) — `ChatService.handle_incoming`
 
 1. The gateway (poller **or** webhook route) parses the update into an
    `IncomingMessage` and calls the handler.
-2. Enforce single-active-chat (see below). Drop if it's a different chat.
-3. Store as `{sender:"bot", status:"received"}` and broadcast `{type:"message"}`.
+2. **Reject if no agent is connected** (`ConnectionManager.has_clients()`) — the
+   bot must not accept a conversation when no one is there.
+3. Enforce single-active-chat (see below); drop if it's a different chat.
+4. Store as `{sender:"user", status:"received"}` and broadcast `{type:"message"}`
+   (carrying `chat_id`, so the client learns the conversation).
 
-## Single-active-chat
+## Single-active-chat (a policy, not a limit)
 
-The "one remote participant" requirement lives in `ChatStore.bind_chat`: the
-first chat to message the bot is bound as the active one; messages from any
-other chat return `False` and are dropped by `ChatService.handle_incoming`. The
-check-and-set is inside the store's lock, so concurrent first-contacts can't
-both bind (no race). Outgoing sends target this one bound chat; before anyone
-has messaged the bot there is no `chat_id`, so a send fails cleanly.
+A **conversation = one Telegram chat = one `chat_id`**. The "one remote
+participant" requirement lives in `ChatStore.register_chat`: the first chat to
+message the bot is admitted; a different chat returns `False` and is dropped by
+`ChatService.handle_incoming`. The check-and-set is inside the store's lock, so
+concurrent first-contacts can't both bind (no race). Outgoing sends are
+validated against the active set (`is_active_chat`); a send to an unknown chat
+is rejected. Because storage and routing are already keyed by `chat_id`,
+allowing **multiple** conversations is just flipping `_SINGLE_ACTIVE_CHAT` off
+in `store.py`.
 
 ## Telegram modes (`TELEGRAM_MODE`)
 
@@ -144,5 +164,11 @@ uvicorn app.main:app --reload                       # live, polling (reads ../.e
   status. The planned queue/worker split (`integration.md`) would return
   `pending` immediately and rely on the WS receipt; the client already supports
   that, so the change is backend-only.
-- **Single conversation** — one bot ↔ one participant, matching the brief; no
-  multi-conversation routing.
+- **Single conversation** — one chat ↔ one participant, enforced as a *policy*
+  (`_SINGLE_ACTIVE_CHAT`); the model is multi-ready (messages and routing are
+  keyed by `chat_id`).
+- **Agent must connect first** — incoming messages are rejected when no agent is
+  connected, and dropped (not queued). "Deliver on next connect" would be a
+  store-buffering change, not a policy change.
+- **`/admin/reset` is unauthenticated** — it's a dev/test affordance; a real
+  deployment would put auth in front of it (or omit it).

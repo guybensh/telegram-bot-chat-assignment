@@ -1,32 +1,49 @@
 import { useCallback, useEffect, useState } from "react";
 import { USE_MOCK, WS_URL } from "../config";
-import { fetchHistory, sendMessage } from "../api/client";
+import {
+  fetchConversations,
+  fetchHistory,
+  resetChat,
+  sendMessage,
+} from "../api/client";
 import { useWebSocket } from "./useWebSocket";
-import { seedMessages } from "../mocks/seedMessages";
+import { seedMessages, MOCK_CHAT_ID } from "../mocks/seedMessages";
 
 /**
- * Owns the chat's message list and the rules for mutating it.
+ * Owns the chat's message list, the active conversation, and the rules for
+ * mutating them.
  *
- * Ordering policy: the server is the single source of truth for ordering. We
- * append in the order events arrive and never re-sort. Outgoing messages are
- * shown optimistically and then reconciled with the server's canonical record.
+ * The conversation (`chatId`) is owned by the server: it's the Telegram
+ * participant's chat, learned only when that participant messages the bot. The
+ * client discovers it (via GET /conversations on load, or the first incoming
+ * message event) and replies into it — it never invents one.
  *
- * Returns { messages, connectionStatus, send }.
+ * Ordering policy: the server is the source of truth; we append in arrival
+ * order and never re-sort. Outgoing messages render optimistically.
+ *
+ * Returns { messages, connectionStatus, send, canSend }.
  */
 export function useChat() {
   const [messages, setMessages] = useState(USE_MOCK ? seedMessages : []);
+  // The active conversation. null until a participant has started one — which
+  // is exactly when the agent is allowed to send.
+  const [chatId, setChatId] = useState(USE_MOCK ? MOCK_CHAT_ID : null);
 
-  // Load the current session's history once on mount. When a DB is added
-  // server-side, this same call transparently returns full history. Skipped in
-  // mock mode, which seeds its history directly above.
+  // On mount, discover the active conversation and load its history. Skipped in
+  // mock mode, which seeds a conversation directly above.
   useEffect(() => {
     if (USE_MOCK) return undefined;
     let cancelled = false;
-    fetchHistory()
-      .then((history) => {
-        if (!cancelled) setMessages(history.map(normalize));
+    fetchConversations()
+      .then((conversations) => {
+        if (cancelled || conversations.length === 0) return undefined;
+        const id = conversations[0].chat_id;
+        setChatId(id);
+        return fetchHistory(id).then((history) => {
+          if (!cancelled) setMessages(history.map(normalize));
+        });
       })
-      .catch((err) => console.error("Could not load history", err));
+      .catch((err) => console.error("Could not load conversations", err));
     return () => {
       cancelled = true;
     };
@@ -36,6 +53,9 @@ export function useChat() {
   const handleEvent = useCallback((event) => {
     switch (event.type) {
       case "message":
+        // Learn the conversation from the first incoming message if we don't
+        // have one yet (a participant just started chatting).
+        setChatId((current) => current ?? event.chat_id);
         setMessages((prev) => [...prev, normalize(event)]);
         break;
       case "receipt":
@@ -45,6 +65,11 @@ export function useChat() {
           )
         );
         break;
+      case "reset":
+        // Server cleared all conversations — drop back to the no-chat state.
+        setChatId(null);
+        setMessages([]);
+        break;
       default:
         console.warn("Unhandled WebSocket event type:", event.type);
     }
@@ -52,53 +77,68 @@ export function useChat() {
 
   const connectionStatus = useWebSocket(WS_URL, handleEvent, !USE_MOCK);
 
-  const send = useCallback(async (text) => {
-    // The client generates the id so the optimistic bubble, the server record,
-    // and any later receipt all share one stable identity. The server stores
-    // the message under this id.
-    const id = crypto.randomUUID();
-    const optimistic = {
-      id,
-      text,
-      timestamp: new Date().toISOString(),
-      sender: "user",
-      status: "pending",
-    };
-    setMessages((prev) => [...prev, optimistic]);
+  const send = useCallback(
+    async (text) => {
+      if (chatId == null) return; // composer is disabled; guard anyway
+      const id = crypto.randomUUID();
+      const optimistic = {
+        id,
+        chat_id: chatId,
+        text,
+        timestamp: new Date().toISOString(),
+        sender: "agent", // the agent speaks as the bot
+        status: "pending",
+      };
+      setMessages((prev) => [...prev, optimistic]);
 
-    // Mock mode: no backend. Mark the message sent, then echo a fake reply so
-    // both bubble styles and the optimistic flow are visible locally.
-    if (USE_MOCK) {
-      setTimeout(() => updateStatus(setMessages, id, "sent"), 300);
-      setTimeout(() => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            text: `Echo: ${text}`,
-            timestamp: new Date().toISOString(),
-            sender: "bot",
-            status: "received",
-          },
-        ]);
-      }, 1200);
-      return;
-    }
-
-    try {
-      // Send the full message object; the server stores it verbatim (timestamp
-      // for ordering, sender, status) and echoes it back.
-      const saved = await sendMessage(optimistic);
-      if (saved?.status) {
-        updateStatus(setMessages, id, saved.status);
+      // Mock mode: no backend. Mark the message sent, then echo a participant
+      // reply so both bubble styles and the optimistic flow are visible.
+      if (USE_MOCK) {
+        setTimeout(() => updateStatus(setMessages, id, "sent"), 300);
+        setTimeout(() => {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              chat_id: chatId,
+              text: `Echo: ${text}`,
+              timestamp: new Date().toISOString(),
+              sender: "user",
+              status: "received",
+            },
+          ]);
+        }, 1200);
+        return;
       }
-    } catch (err) {
-      console.error("Send failed", err);
-      updateStatus(setMessages, id, "failed");
+
+      try {
+        const saved = await sendMessage(optimistic);
+        if (saved?.status) {
+          updateStatus(setMessages, id, saved.status);
+        }
+      } catch (err) {
+        console.error("Send failed", err);
+        updateStatus(setMessages, id, "failed");
+      }
+    },
+    [chatId]
+  );
+
+  const reset = useCallback(async () => {
+    // Clear local state immediately; the server broadcast also resets any other
+    // connected tabs. In mock mode there's no backend to call.
+    if (!USE_MOCK) {
+      try {
+        await resetChat();
+      } catch (err) {
+        console.error("Reset failed", err);
+      }
     }
+    setChatId(null);
+    setMessages([]);
   }, []);
 
-  return { messages, connectionStatus, send };
+  return { messages, connectionStatus, send, canSend: chatId != null, reset };
 }
 
 // Set the delivery status of the message identified by id.
@@ -106,11 +146,11 @@ function updateStatus(setMessages, id, status) {
   setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
 }
 
-// Normalize a server message into the client's shape. Every message — incoming
-// or outgoing — is keyed by its single `id`.
+// Normalize a server message into the client's shape.
 function normalize(msg) {
   return {
     id: msg.id,
+    chat_id: msg.chat_id,
     text: msg.text,
     timestamp: msg.timestamp,
     sender: msg.sender,

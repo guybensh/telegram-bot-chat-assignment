@@ -5,11 +5,33 @@ import { API_URL } from "../config";
 // (see hooks/useWebSocket.js), keeping a clean request/response vs. push split.
 
 /**
- * Load the message history for the current session.
- * Returns an array of messages in server-defined order.
+ * List the active conversations so the client knows which chat exists and which
+ * chat_id to reply to. Returns an array of `{ chat_id }`.
  */
-export async function fetchHistory() {
-  const res = await fetch(`${API_URL}/messages`);
+export async function fetchConversations() {
+  const res = await fetch(`${API_URL}/conversations`);
+  if (!res.ok) {
+    throw new Error(`Failed to load conversations (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Admin/dev: clear all conversation state on the server.
+ */
+export async function resetChat() {
+  const res = await fetch(`${API_URL}/admin/reset`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(`Reset failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Load one conversation's message history, in server-defined order.
+ */
+export async function fetchHistory(chatId) {
+  const res = await fetch(`${API_URL}/messages?chat_id=${chatId}`);
   if (!res.ok) {
     throw new Error(`Failed to load history (${res.status})`);
   }

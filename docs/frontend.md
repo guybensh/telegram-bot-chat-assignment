@@ -41,55 +41,76 @@ The dependency direction is one-way: `App → components → (props)` and
 `App → useChat → { useWebSocket, api/client }`. Components are presentational
 and hold no network logic; all state lives in `useChat`.
 
-## Message model
+## Roles & message model
 
-Every message — incoming or outgoing — is the same shape, keyed by a single
-`id`:
+This app is a **back-office console**: a human **agent** holds a Telegram
+conversation with a remote **user**, with the bot as the conduit.
+
+Every message is the same shape:
 
 ```js
 {
-  id:        "uuid",                       // client-generated for outgoing,
-                                           // server-generated for incoming
+  id:        "uuid",                       // client-gen for outgoing, server-gen for incoming
+  chat_id:   123456,                       // the Telegram conversation it belongs to
   text:      "Hello",
   timestamp: "2026-06-12T09:30:00.000Z",   // ISO 8601; set at send time, used for ordering
-  sender:    "user" | "bot",               // "user" = us, "bot" = Telegram bot
+  sender:    "user" | "agent" | "bot",
   status:    "pending" | "sent" | "failed" // outgoing
              | "received",                 // incoming (constant)
 }
 ```
 
-- **`id`** — generated on the client at send time so the optimistic bubble, the
-  server record, and any later receipt all share one identity. The server
-  stores outgoing messages under this id. Incoming messages bring their own id.
-- **`sender`** drives the bubble side/color (`user` → right/blue,
-  `bot` → left/white) via the `outgoing`/`incoming` CSS classes.
-- **`status`** drives the delivery indicator, shown only on our own messages.
+- **`sender`** — `user` = the remote Telegram human (incoming, left); `agent` =
+  us, the back-office human (outgoing, right); `bot` = a future automated reply
+  (reserved). Rendering: `sender !== "user"` is our side, so `agent` and `bot`
+  both render on the right.
+- **`chat_id`** — the conversation. The server owns it (it's the Telegram user's
+  chat); the client learns it and replies into it — it never invents one.
+- **`id`** — client-generated on send so the optimistic bubble, the server
+  record, and any receipt share one identity. Incoming messages bring their own.
+- **`status`** — drives the delivery indicator, shown only on our own messages.
+
+## Conversations & the "no chat yet" state
+
+A Telegram **bot cannot initiate** a conversation — it only learns a `chat_id`
+once the user messages it. So:
+
+- On mount the client calls `GET /conversations`; if one exists it loads its
+  history and sets the active `chatId`.
+- Otherwise `chatId` is `null` and the composer is **disabled** ("Waiting for a
+  user to start the chat…"). The client also learns the `chat_id` live from the
+  first incoming `message` event.
+- `canSend = chatId != null` gates the composer; sends include that `chat_id`.
 
 ## Data flow
 
-### Outgoing (user → Telegram)
+### Outgoing (agent → Telegram user)
 
 1. `useChat.send(text)` generates an `id` and appends an **optimistic** message
-   with `status: "pending"` — it shows instantly.
-2. `POST /messages` with the **full message object**. The server stores it
-   verbatim (using the `timestamp` to order the conversation) and echoes it
-   back; the client adopts any status it reports. On failure the message flips
-   to `"failed"`.
+   (`sender:"agent"`, `status:"pending"`) — it shows instantly.
+2. `POST /messages` with the **full message object** (including `chat_id`). The
+   server stores it and echoes it back; the client adopts the status. On failure
+   (incl. a `409` for an inactive chat) the message flips to `"failed"`.
 3. A later WebSocket `receipt` event updates the same id to `sent`/`failed`.
 
-### Incoming (Telegram → user)
+### Incoming (Telegram user → agent)
 
-1. The server pushes `{ type: "message", ... }` over the WebSocket.
-2. `useChat` appends it to the list. Ordering is the server's; the client never
-   re-sorts — it renders in arrival order.
+1. The server pushes `{ type: "message", chat_id, ... }` over the WebSocket.
+2. `useChat` appends it (and adopts `chat_id` if it didn't have one). Ordering is
+   the server's; the client never re-sorts.
+
+A `{ type: "reset" }` event (from the admin Reset button) drops the client back
+to the no-chat state.
 
 ## Backend contract
 
 | Channel | Endpoint | Payload |
 |---|---|---|
-| Load history | `GET /messages` | → array of messages |
-| Send | `POST /messages` | full message object → the stored message |
-| Server push | WebSocket `/ws` | `{ type: "message", ... }` / `{ type: "receipt", message_id, status }` |
+| List conversations | `GET /conversations` | → `[{ chat_id }]` |
+| Load history | `GET /messages?chat_id=<id>` | → array of messages |
+| Send | `POST /messages` | `{ id, chat_id, text, timestamp }` → the stored message |
+| Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, chat_id, status}` / `{type:"reset"}` |
+| Admin reset | `POST /admin/reset` | clears all conversations (dev/admin) |
 
 The WebSocket is a general server-push channel — new event types are just
 another `case` in `useChat`'s handler, no transport changes.
@@ -123,8 +144,9 @@ npm run build      # production build
 - **Session-scoped, no client persistence.** History is loaded on mount; the
   brief allows the chat to show only the current session. A DB added
   server-side would surface through the same `GET /messages` call.
-- **Single conversation.** The UI assumes one bot ↔ one participant, matching
-  the single-active-chat backend constraint; there is no conversation list.
+- **Single conversation.** The UI shows the one active conversation, matching
+  the backend's single-active-chat policy; there's no conversation switcher yet,
+  but messages are already tagged with `chat_id` so one could be added.
 - **Client-generated ids.** Chosen for race-free correlation across the
   optimistic bubble, REST response, and WebSocket receipt. The server treats the
   id as the storage key and is expected to reject duplicates.
