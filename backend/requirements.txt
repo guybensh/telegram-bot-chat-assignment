@@ -4,7 +4,13 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 
-# Add as you implement the rest of the backend, e.g.:
-# python-telegram-bot==21.9   # Telegram bot integration
+# Settings loaded from environment / .env (see app/config.py).
+pydantic-settings==2.7.1
+
+# Async HTTP client for the Telegram Bot API (send + receive).
+httpx==0.28.1
+
+# Persistence is in-memory for the assignment (see app/store.py). The store's
+# async interface is DB-ready; a real deployment would add e.g.:
 # SQLAlchemy==2.0.36          # persistence layer (sessions / messages)
 # aiosqlite==0.20.0           # async SQLite driver for local dev
