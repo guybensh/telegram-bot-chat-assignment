@@ -1,7 +1,7 @@
 import asyncio
 
+from ...models import Message, Status
 from .chat_repository import ChatRepository
-from .models import Message, Status
 
 
 class InMemoryChatRepository(ChatRepository):

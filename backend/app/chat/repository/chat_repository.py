@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from .models import Message, Status
+from ...models import Message, Status
 
 
 class ChatRepository(ABC):
@@ -9,8 +9,7 @@ class ChatRepository(ABC):
     `ChatService` depends on this abstraction rather than a concrete store, so
     the storage backend can be swapped — in-memory today, a database tomorrow —
     without changing any domain logic. The current implementation is
-    `InMemoryChatRepository` in `store.py`; a DB-backed one would implement the
-    same interface.
+    `InMemoryChatRepository`; a DB-backed one would implement the same interface.
 
     Concurrency contract: `register_chat` must perform its capacity check and
     admission atomically with respect to concurrent callers, so the active-chat

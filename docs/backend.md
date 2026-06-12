@@ -23,13 +23,15 @@ the cross-layer contract.
 backend/app/
   config.py              Settings from env / .env (token, mode, webhook, max chats)
   models.py              Message + Sender/Status enums; SendMessageRequest
-  chat_repository.py     ChatRepository — the storage interface (DAL)
-  store.py               InMemoryChatRepository — in-memory DAL implementation
   connection_manager.py  WebSocket client registry + broadcast
   telegram_api.py        Thin HTTP wrapper over the Telegram Bot API
   telegram_service.py    Isolated Telegram gateway: send + receive/parse updates
-  chat_service.py        The chat domain: how incoming/outgoing messages are processed
   main.py                FastAPI app: routes, wiring, lifespan
+  chat/                  The chat domain
+    chat_service.py        How incoming/outgoing messages are processed
+    repository/            Data-access layer (DAL)
+      chat_repository.py            ChatRepository — the storage interface
+      in_memory_chat_repository.py  InMemoryChatRepository — in-memory impl
 ```
 
 Dependency direction is one-way:

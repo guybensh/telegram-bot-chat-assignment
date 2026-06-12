@@ -11,11 +11,11 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 
-from .chat_service import ChatService, NoActiveConversationError
+from .chat import ChatService, NoActiveConversationError
+from .chat.repository import InMemoryChatRepository
 from .config import get_settings
 from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
-from .store import InMemoryChatRepository
 from .telegram_api import TelegramAPI
 from .telegram_service import TelegramService
 

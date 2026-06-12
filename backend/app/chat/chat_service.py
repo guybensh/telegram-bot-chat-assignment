@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
 
-from .chat_repository import ChatRepository
-from .connection_manager import ConnectionManager
-from .models import Message, Sender, Status
-from .telegram_service import IncomingMessage, TelegramService
+from ..connection_manager import ConnectionManager
+from ..models import Message, Sender, Status
+from ..telegram_service import IncomingMessage, TelegramService
+from .repository import ChatRepository
 
 logger = logging.getLogger(__name__)
 
