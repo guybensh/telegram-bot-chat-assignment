@@ -42,6 +42,9 @@ export function useWebSocket(url, onMessage, enabled = true) {
     };
 
     socket.onmessage = (event) => {
+      // Ignore a socket that has already been superseded (only the current one
+      // delivers), so duplicate sockets can never double-deliver a message.
+      if (socketRef.current !== socket) return;
       try {
         onMessageRef.current?.(JSON.parse(event.data));
       } catch (err) {
@@ -55,6 +58,10 @@ export function useWebSocket(url, onMessage, enabled = true) {
     };
 
     socket.onclose = () => {
+      // A superseded socket (e.g. from React StrictMode's mount/unmount/remount
+      // in dev) must not drive status or spawn a reconnect — only the current
+      // one may. This prevents ending up with two live sockets.
+      if (socketRef.current !== socket) return;
       setStatus("closed");
       if (!activeRef.current) return;
       const delay = Math.min(

@@ -3,26 +3,32 @@
 // the chat always looks recent.
 const minutesAgo = (n) => new Date(Date.now() - n * 60_000).toISOString();
 
+// A stand-in Telegram chat id for the seeded conversation in mock mode.
+export const MOCK_CHAT_ID = 424242;
+
 export const seedMessages = [
   {
     id: "seed-1",
+    chat_id: MOCK_CHAT_ID,
     text: "Hey! Is this the support bot?",
     timestamp: minutesAgo(6),
-    sender: "bot",
+    sender: "user", // remote Telegram participant
     status: "received",
   },
   {
     id: "seed-2",
-    text: "Yes — you're connected. How can I help?",
+    chat_id: MOCK_CHAT_ID,
+    text: "Yes — how can I help?",
     timestamp: minutesAgo(5),
-    sender: "user",
+    sender: "agent", // our web app (the human agent)
     status: "sent",
   },
   {
     id: "seed-3",
+    chat_id: MOCK_CHAT_ID,
     text: "Great, just testing the chat 👍",
     timestamp: minutesAgo(4),
-    sender: "bot",
+    sender: "user",
     status: "received",
   },
 ];
