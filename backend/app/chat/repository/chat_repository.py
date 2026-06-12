@@ -31,12 +31,15 @@ class ChatRepository(ABC):
         """The chat_ids of all active conversations."""
 
     @abstractmethod
-    async def add(self, message: Message) -> Message:
-        """Persist a message in its conversation."""
+    async def add(self, chat_id: int, message: Message) -> Message:
+        """Persist `message` in conversation `chat_id`."""
 
     @abstractmethod
-    async def update_status(self, message_id: str, status: Status) -> Message | None:
-        """Update a message's delivery status; returns the message or None."""
+    async def update_status(
+        self, chat_id: int, message_id: str, status: Status
+    ) -> Message | None:
+        """Update the status of message `message_id` within conversation
+        `chat_id`; returns the message, or None if not found."""
 
     @abstractmethod
     async def list(self, chat_id: int) -> list[Message]:

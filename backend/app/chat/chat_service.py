@@ -71,12 +71,12 @@ class ChatService:
             sender=Sender.AGENT,
             status=Status.PENDING,
         )
-        await self._repository.add(message)
+        await self._repository.add(chat_id, message)
 
         delivered = await self._telegram.send(chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
-        await self._repository.update_status(message.id, status)
+        await self._repository.update_status(chat_id, message.id, status)
         message.status = status
         await self._manager.broadcast(
             {
@@ -120,7 +120,7 @@ class ChatService:
             sender=Sender.USER,
             status=Status.RECEIVED,
         )
-        await self._repository.add(message)
+        await self._repository.add(incoming.chat_id, message)
         await self._manager.broadcast(
             {"type": "message", **message.model_dump(mode="json")}
         )
