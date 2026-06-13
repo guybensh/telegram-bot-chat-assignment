@@ -137,8 +137,8 @@ and routing are already keyed by `chat_id`.
 
 | Mode | Receive | Use |
 |---|---|---|
-| `poll` (default) | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed |
-| `webhook` | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
+| `webhook` (default) | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
+| `poll` | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed (`.env.development`) |
 | `mock` | `TelegramPoller` mock feed | Local testing with no live bot — outgoing sends are simulated, a fake user message arrives every 10s |
 
 All receive paths converge on `gateway.process_update` → `chat.handle_incoming`,
@@ -149,16 +149,26 @@ so switching modes changes only how raw updates are obtained.
 - All shared-state mutation goes through `ChatStore`'s `asyncio.Lock`.
 - The poll loop backs off on errors (e.g. a 409 Conflict when another instance
   is polling the same bot) instead of hammering the API.
-- `httpx` request logging is silenced so the bot token never lands in logs.
+- `httpx` request logging is filtered to redact the bot token, so the live
+  getUpdates/sendMessage responses are visible in logs but the token never is.
 
 ## Configuration
 
-Environment variables (see `.env.example`; `.env` is gitignored):
+Settings are layered: the shared `.env` (webhook / production defaults) plus
+`.env.development` when `ENVIRONMENT=development` (polling overrides). Real
+environment variables override both. All `.env*` are gitignored; `*.example`
+templates are committed.
 
-- `TELEGRAM_BOT_TOKEN` — from BotFather (required for live integration).
-- `TELEGRAM_MODE` — `poll` | `webhook` | `mock` (default `poll`).
-- `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` / `TELEGRAM_WEBHOOK_SECRET` —
-  webhook mode only.
+```
+.env                 # production — TELEGRAM_MODE=webhook + webhook URL/secret
+.env.development     # ENVIRONMENT=development — TELEGRAM_MODE=poll (overrides .env)
+```
+
+Variables:
+- `TELEGRAM_BOT_TOKEN` — from BotFather (required for live use).
+- `TELEGRAM_MODE` — `webhook` | `poll` | `mock`.
+- `TELEGRAM_API_BASE` — Telegram Bot API base URL (default `https://api.telegram.org`).
+- `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` — webhook mode only.
 - `MAX_ACTIVE_CHATS` — max simultaneous conversations (default `1`).
 
 ## Run
@@ -168,8 +178,9 @@ cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-TELEGRAM_MODE=mock uvicorn app.main:app --reload   # local test, no bot
-uvicorn app.main:app --reload                       # live, polling (reads ../.env)
+uvicorn app.main:app --reload                              # default: webhook (.env)
+ENVIRONMENT=development uvicorn app.main:app --reload      # polling (.env.development)
+TELEGRAM_MODE=mock uvicorn app.main:app --reload           # no bot (overrides mode inline)
 ```
 
 ## Trade-offs & assumptions
