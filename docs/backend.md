@@ -149,14 +149,24 @@ so switching modes changes only how raw updates are obtained.
 - All shared-state mutation goes through `ChatStore`'s `asyncio.Lock`.
 - The poll loop backs off on errors (e.g. a 409 Conflict when another instance
   is polling the same bot) instead of hammering the API.
-- `httpx` request logging is silenced so the bot token never lands in logs.
+- `httpx` request logging is filtered to redact the bot token, so the live
+  getUpdates/sendMessage responses are visible in logs but the token never is.
 
 ## Configuration
 
-Environment variables (see `.env.example`; `.env` is gitignored):
+Settings are layered: the shared `.env` (secrets) plus a per-mode file selected
+by `APP_CONFIG` (default `webhook`). Real environment variables override both.
+All `.env*` are gitignored; `*.example` templates are committed.
 
-- `TELEGRAM_BOT_TOKEN` — from BotFather (required for live integration).
-- `TELEGRAM_MODE` — `poll` | `webhook` | `mock` (default `poll`).
+```
+.env                 # shared — TELEGRAM_BOT_TOKEN, MAX_ACTIVE_CHATS   (always loaded)
+.env.webhook         # APP_CONFIG=webhook (default) — TELEGRAM_MODE=webhook + URL/secret
+.env.poll            # APP_CONFIG=poll             — TELEGRAM_MODE=poll
+```
+
+Variables:
+- `TELEGRAM_BOT_TOKEN` — from BotFather (shared `.env`; required for live use).
+- `TELEGRAM_MODE` — `webhook` | `poll` | `mock` (set by the loaded per-mode file).
 - `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` / `TELEGRAM_WEBHOOK_SECRET` —
   webhook mode only.
 - `MAX_ACTIVE_CHATS` — max simultaneous conversations (default `1`).
@@ -168,8 +178,9 @@ cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-TELEGRAM_MODE=mock uvicorn app.main:app --reload   # local test, no bot
-uvicorn app.main:app --reload                       # live, polling (reads ../.env)
+uvicorn app.main:app --reload                      # default config: webhook
+APP_CONFIG=poll uvicorn app.main:app --reload      # polling config
+TELEGRAM_MODE=mock uvicorn app.main:app --reload   # no bot (overrides mode inline)
 ```
 
 ## Trade-offs & assumptions
