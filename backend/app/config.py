@@ -3,27 +3,29 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Selects which runtime configuration to load: "webhook" (the default) or
-# "poll". Each layers a `.env.<APP_CONFIG>` file (the mode + its settings) on top
-# of the shared `.env` (secrets like the bot token). Override per run, e.g.
-#   APP_CONFIG=poll uvicorn app.main:app
-APP_CONFIG = os.getenv("APP_CONFIG", "webhook")
+# Selects which env overlay to load on top of `.env`. Default "production" loads
+# only `.env` (webhook). Set to "development" to also load `.env.development`
+# (polling). Override per run, e.g.:
+#   ENVIRONMENT=development uvicorn app.main:app --reload
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 
 def _env_files() -> tuple[str, ...]:
-    """Env files in increasing priority: the shared `.env` first, then the
-    selected `.env.<APP_CONFIG>` (so its values win on any overlap). Each name is
-    resolved whether uvicorn is launched from the repo root or from backend/."""
-    names = (".env", f".env.{APP_CONFIG}")
+    """Env files in increasing priority: `.env` first, then `.env.development`
+    when ENVIRONMENT=development (so dev values win on any overlap). Each name
+    is resolved whether uvicorn is launched from the repo root or backend/."""
+    names: list[str] = [".env"]
+    if ENVIRONMENT == "development":
+        names.append(".env.development")
     return tuple(path for name in names for path in (name, f"../{name}"))
 
 
 class Settings(BaseSettings):
     """Backend configuration.
 
-    Resolved in priority order: real environment variables, then the per-mode
-    `.env.<APP_CONFIG>` file, then the shared `.env`. `APP_CONFIG` defaults to
-    "webhook"; set it to "poll" to load the polling config.
+    Resolved in priority order: real environment variables, then `.env.development`
+    (when ENVIRONMENT=development), then `.env`. ENVIRONMENT defaults to
+    "production" (webhook); set it to "development" to load polling config.
     """
 
     model_config = SettingsConfigDict(
@@ -32,22 +34,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Telegram bot token created via BotFather. Lives in the shared `.env`.
-    # Required for live integration; if empty, the API runs but Telegram is off.
-    telegram_bot_token: str = ""
-
-    # How the backend handles Telegram: "webhook" (default — Telegram pushes to
-    # us), "poll" (getUpdates long-poll), or "mock" (no real Telegram). Normally
-    # set by the loaded `.env.<APP_CONFIG>` file.
-    telegram_mode: str = "webhook"
-
-    telegram_api_base: str = "https://api.telegram.org"
-
-    # Maximum number of simultaneous active conversations the bot will accept.
     max_active_chats: int = 1
 
+    # Telegram configuration
+    telegram_api_base: str = "https://api.telegram.org"
+    telegram_bot_token: str = ""
+    # How the backend handles Telegram: "webhook" (default — Telegram pushes to
+    # us), "poll" (getUpdates long-poll), or "mock" (no real Telegram - dev mode only).
+    telegram_mode: str = "webhook"
     # Webhook mode only. telegram_webhook_url is the PUBLIC base (e.g. an ngrok
-    # https URL); the path is appended to form the registered webhook endpoint.
+    # https URL); webhook_path + /{bot_token} form the registered endpoint.
     telegram_webhook_url: str = ""
     telegram_webhook_path: str = "/telegram/webhook"
     telegram_webhook_secret: str = ""

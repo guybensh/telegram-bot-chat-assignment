@@ -81,29 +81,114 @@ State management, concurrency handling, and message ordering should be handled s
 
 ## Setup Instructions
 
+### Environment files
+
+Backend config lives at the **repo root** (not inside `backend/`). Copy the
+templates and fill in your values:
+
+```bash
+cp .env.example .env
+cp .env.development.example .env.development   # optional — local dev overrides
+```
+
+| File | Purpose |
+|---|---|
+| `.env` | Default / production config (`TELEGRAM_MODE=webhook`) |
+| `.env.development` | Dev overrides, loaded when `ENVIRONMENT=development` (e.g. polling) |
+
+Real shell environment variables override both files.
+
+**Backend variables** (see `.env.example`):
+
+| Variable | Description |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather (required for live Telegram) |
+| `TELEGRAM_MODE` | `webhook` \| `poll` \| `mock` |
+| `TELEGRAM_API_BASE` | Telegram API base URL (default `https://api.telegram.org`) |
+| `MAX_ACTIVE_CHATS` | Max simultaneous conversations (default `1`) |
+| `TELEGRAM_WEBHOOK_URL` | Public HTTPS base for webhook mode (e.g. ngrok URL) |
+| `TELEGRAM_WEBHOOK_PATH` | Webhook route prefix (default `/telegram/webhook`; bot token is appended) |
+| `TELEGRAM_WEBHOOK_SECRET` | Optional shared secret validated on inbound webhooks |
+
+**Frontend variables** (Vite — set inline or in `frontend/.env.local`):
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Backend base URL (default `http://localhost:8000`) |
+| `VITE_USE_MOCK` | Set to `true` to run the UI with no backend (mock data) |
+
+---
+
 ### Backend
 
-Bash
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
 ```
+
+Run from `backend/` — the app loads `.env` from the repo root automatically.
+
+| Mode | Command | When to use |
+|---|---|---|
+| **Webhook** (default) | `uvicorn app.main:app --reload` | Production or local dev with a public HTTPS tunnel (ngrok) |
+| **Polling** | `ENVIRONMENT=development uvicorn app.main:app --reload` | Local dev — no public URL needed; uses `.env.development` |
+| **Mock** | `TELEGRAM_MODE=mock uvicorn app.main:app --reload` | Backend runs with no live Telegram bot |
+
+Webhook mode registers Telegram to:
+
+```text
+{TELEGRAM_WEBHOOK_URL}{TELEGRAM_WEBHOOK_PATH}/{TELEGRAM_BOT_TOKEN}
+```
+
+Health check: [http://localhost:8000/health](http://localhost:8000/health)
+
+---
 
 ### Frontend
 
-Bash
 ```bash
 cd frontend
 npm install
-npm run dev
 ```
 
-### Docker Setup (Optional but Recommended)
+| Script | Command | When to use |
+|---|---|---|
+| **Dev** (real backend) | `npm run dev` | Default — talks to `http://localhost:8000` |
+| **Dev mock** (no backend) | `npm run dev:mock` | UI only, seeded sample messages |
+| **Custom backend URL** | `VITE_API_URL=http://localhost:8000 npm run dev` | Point at a different backend host/port |
+| **Build** | `npm run build` | Production bundle |
+| **Preview build** | `npm run preview` | Serve the production build locally |
 
-For a streamlined setup, you can run the entire system using Docker Compose. This ensures all dependencies and environment configurations are handled automatically.
+App URL: [http://localhost:5173](http://localhost:5173)
+
+---
+
+### Typical local workflow
+
+Use polling on the backend and the real frontend against it:
+
+```bash
+# Terminal 1 — backend (polling)
+cd backend && source venv/bin/activate
+ENVIRONMENT=development uvicorn app.main:app --reload
+
+# Terminal 2 — frontend
+cd frontend && npm run dev
+```
+
+Or run the frontend alone with mock data (no backend or bot needed):
+
+```bash
+cd frontend && npm run dev:mock
+```
+
+---
+
+### Docker Setup (Optional)
+
+If `docker-compose.yml` is present, you can run the full stack in containers:
 
 1. **Configure the bot token:**
    ```bash
@@ -116,16 +201,12 @@ For a streamlined setup, you can run the entire system using Docker Compose. Thi
    docker-compose up --build
    ```
 
-This brings up two services with hot reload enabled (source is mounted into the containers):
-
 | Service | URL | Notes |
 |---|---|---|
 | Frontend | http://localhost:5173 | Vite dev server (React) |
 | Backend | http://localhost:8000 | FastAPI; health check at `/health` |
 
-The frontend reads the backend URL from the `VITE_API_URL` environment variable
-(`import.meta.env.VITE_API_URL`), which defaults to `http://localhost:8000` in
-`docker-compose.yml`.
+The frontend reads `VITE_API_URL` at build/dev time (defaults to `http://localhost:8000`).
 
 To stop and remove the containers:
 

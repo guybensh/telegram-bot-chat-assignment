@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from .telegram_api import TelegramAPI
+from .api import TelegramAPI
 
 logger = logging.getLogger(__name__)
 

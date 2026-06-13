@@ -3,7 +3,7 @@ from datetime import datetime
 
 from ..connection_manager import ConnectionManager
 from ..models import Message, Sender, Status
-from ..telegram_service import IncomingMessage, TelegramService
+from ..messaging_providers.telegram import IncomingMessage, TelegramService
 from .repository import ChatRepository
 
 logger = logging.getLogger(__name__)
@@ -29,12 +29,12 @@ class ChatService:
     def __init__(
         self,
         repository: ChatRepository,
-        manager: ConnectionManager,
+        connection_manager: ConnectionManager,
         telegram: TelegramService,
         max_active_chats: int = 1,
     ) -> None:
         self._repository = repository
-        self._manager = manager
+        self._connection_manager = connection_manager
         self._telegram = telegram
         self._max_active_chats = max_active_chats
 
@@ -48,7 +48,7 @@ class ChatService:
         """Admin/dev: clear all conversation state and tell every connected
         client to reset, so the no-active-chat flow can be exercised again."""
         await self._repository.reset()
-        await self._manager.broadcast({"type": "reset"})
+        await self._connection_manager.broadcast({"type": "reset"})
 
     # --- outgoing: agent -> Telegram participant ------------------------
 
@@ -79,7 +79,7 @@ class ChatService:
         await self._repository.update_status(chat_id, message.id, status)
         message.status = status
         logger.info("Outgoing [chat %s] %r -> %s", chat_id, text[:200], status.value)
-        await self._manager.broadcast(
+        await self._connection_manager.broadcast(
             {
                 "type": "receipt",
                 "message_id": message.id,
@@ -96,7 +96,7 @@ class ChatService:
         connected first, then admit the conversation (subject to the configured
         limit), store it, and push it to every connected client."""
         # The agent must connect first — reject if no client is present.
-        if not self._manager.has_clients():
+        if not self._connection_manager.has_clients():
             logger.info(
                 "No agent connected; rejecting incoming from chat %s",
                 incoming.chat_id,
@@ -125,6 +125,6 @@ class ChatService:
         logger.info(
             "Incoming [chat %s] %r", incoming.chat_id, incoming.text[:200]
         )
-        await self._manager.broadcast(
+        await self._connection_manager.broadcast(
             {"type": "message", **message.model_dump(mode="json")}
         )

@@ -7,7 +7,7 @@ import {
   sendMessage,
 } from "../api/client";
 import { useWebSocket } from "./useWebSocket";
-import { seedMessages, MOCK_CHAT_ID } from "../mocks/seedMessages";
+import { seedMessages, MOCK_CHAT_ID } from "../../__mocks__/seedMessages";
 
 /**
  * Owns the chat's message list, the active conversation, and the rules for

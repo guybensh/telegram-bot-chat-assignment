@@ -16,9 +16,8 @@ from .chat.repository import InMemoryChatRepository
 from .config import get_settings
 from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
-from .telegram_api import TelegramAPI
-from .telegram_poller import TelegramPoller
-from .telegram_service import TelegramService
+from .messaging_providers.telegram import TelegramAPI, TelegramService
+from .messaging_providers.telegram.poller import TelegramPoller
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,35 +49,81 @@ if settings.telegram_bot_token:
         _RedactTokenFilter(settings.telegram_bot_token)
     )
 repository = InMemoryChatRepository()
-manager = ConnectionManager()
+connection_manager = ConnectionManager()
 telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)
 telegram = TelegramService(telegram_api, mock=settings.telegram_mode == "mock")
 chat = ChatService(
-    repository, manager, telegram, max_active_chats=settings.max_active_chats
+    repository, connection_manager, telegram, max_active_chats=settings.max_active_chats
 )
 # Drives the pull mechanism: fetches/parses updates in a loop and passes each
 # to chat.handle_incoming. (Webhook mode delivers inline in the webhook route.)
 poller = TelegramPoller(telegram, chat)
 
+WEBHOOK_ROUTE = f"{settings.telegram_webhook_path.rstrip('/')}/{{bot_token}}"
+
+
+def generate_telegram_webhook_url(
+    *,
+    public_base_url: str,
+    webhook_path: str,
+    bot_token: str,
+) -> str:
+    """
+    Build the full URL registered with Telegram's setWebhook.
+    The bot token is included as the final path segment so inbound webhook
+    requests can be routed and validated per bot.
+    """
+    return (
+        f"{public_base_url.rstrip('/')}"
+        f"{webhook_path.rstrip('/')}/{bot_token}"
+    )
+
+
+async def _start_mock_mode() -> None:
+    logger.info("Mock mode: simulated delivery + a fake incoming message every 10s")
+    await poller.start_mock_feed()
+
+
+async def _start_webhook_mode() -> None:
+    url = generate_telegram_webhook_url(
+        public_base_url=settings.telegram_webhook_url,
+        webhook_path=settings.telegram_webhook_path,
+        bot_token=settings.telegram_bot_token,
+    )
+    ok = await telegram_api.set_webhook(
+        url, settings.telegram_webhook_secret or None
+    )
+    safe_url = url.replace(settings.telegram_bot_token, "<token>")
+    logger.info("Webhook mode: setWebhook(%s) -> ok=%s", safe_url, ok)
+
+
+async def _start_polling_mode() -> None:
+    # Polling needs no public URL; clear any stale webhook so Telegram delivers
+    # via getUpdates.
+    await telegram_api.delete_webhook()
+    await poller.start_polling()
+    logger.info("Polling mode: started")
+
+
+async def _start_telegram_receive() -> None:
+    if settings.telegram_mode == "mock":
+        await _start_mock_mode()
+        return
+
+    if not settings.telegram_bot_token:
+        logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram integration disabled")
+        return
+
+    if settings.telegram_mode == "webhook":
+        await _start_webhook_mode()
+    else:
+        await _start_polling_mode()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the chosen Telegram receive strategy on boot, tear it down on exit."""
-    if settings.telegram_mode == "mock":
-        logger.info("Mock mode: simulated delivery + a fake incoming message every 10s")
-        await poller.start_mock_feed()
-    elif not settings.telegram_bot_token:
-        logger.warning("TELEGRAM_BOT_TOKEN not set — Telegram integration disabled")
-    elif settings.telegram_mode == "webhook":
-        url = settings.telegram_webhook_url.rstrip("/") + settings.telegram_webhook_path
-        ok = await telegram_api.set_webhook(url, settings.telegram_webhook_secret or None)
-        logger.info("Webhook mode: setWebhook(%s) -> ok=%s", url, ok)
-    else:
-        # Polling mode needs no public URL; clear any stale webhook first so
-        # Telegram delivers via getUpdates.
-        await telegram_api.delete_webhook()
-        await poller.start_polling()
-
+    await _start_telegram_receive()
     try:
         yield
     finally:
@@ -138,13 +183,17 @@ async def post_message(payload: SendMessageRequest):
         )
 
 
-@app.post(settings.telegram_webhook_path)
+@app.post(WEBHOOK_ROUTE)
 async def telegram_webhook(
+    bot_token: str,
     request: Request,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
-    """Inbound endpoint for Telegram webhook mode. Validates the optional shared
-    secret, then funnels the update through the same processing path as polling."""
+    """Inbound endpoint for Telegram webhook mode. Validates the bot token path
+    segment and optional shared secret, then funnels the update through the same
+    processing path as polling."""
+    if bot_token != settings.telegram_bot_token:
+        raise HTTPException(status_code=403, detail="Invalid bot token")
     if (
         settings.telegram_webhook_secret
         and x_telegram_bot_api_secret_token != settings.telegram_webhook_secret
@@ -162,9 +211,9 @@ async def websocket_endpoint(websocket: WebSocket):
     """Server-push channel: incoming messages and delivery receipts. The client
     never sends over this socket, so the receive loop exists only to keep the
     connection open and detect disconnects."""
-    await manager.connect(websocket)
+    await connection_manager.connect(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await manager.disconnect(websocket)
+        await connection_manager.disconnect(websocket)

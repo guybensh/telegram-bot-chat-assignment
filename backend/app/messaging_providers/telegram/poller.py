@@ -2,8 +2,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from .chat import ChatService
-from .telegram_service import IncomingMessage, TelegramService
+from ...chat import ChatService
+from .service import IncomingMessage, TelegramService
 
 logger = logging.getLogger(__name__)
 
