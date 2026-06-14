@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from ..bot import BotNotFoundError, BotService
 from ...connection_manager import ConnectionManager
 from ...models import ConversationSummary, Message, Sender, Status
-from ...messaging_providers.telegram import IncomingMessage, TelegramGateway
+from ...messaging_providers import IncomingMessage, MessageProvider
 from .repository import ChatRepository
 
 logger = logging.getLogger(__name__)
@@ -23,18 +23,18 @@ class ChatService:
         self,
         repository: ChatRepository,
         connection_manager: ConnectionManager,
-        telegram: TelegramGateway,
+        messaging: MessageProvider,
         bot_service: BotService,
     ) -> None:
         self._repository = repository
         self._connection_manager = connection_manager
-        self._telegram = telegram
+        self._messaging = messaging
         self._bot_service = bot_service
 
     async def list_conversation_summaries(
         self, username: str
     ) -> list[ConversationSummary]:
-        bot = await self._bot_service.get_record(username)
+        bot = await self._bot_service.get_by_username(username)
         summaries: list[ConversationSummary] = []
         for chat_id in await self._repository.active_chats(bot.bot_id):
             messages = await self._repository.get_conversation(bot.bot_id, chat_id)
@@ -61,7 +61,7 @@ class ChatService:
         return len(await self._repository.active_chats(bot_id))
 
     async def get_history(self, username: str, chat_id: int) -> list[Message]:
-        bot = await self._bot_service.get_record(username)
+        bot = await self._bot_service.get_by_username(username)
         return await self._repository.get_conversation(bot.bot_id, chat_id)
 
     async def reset(self) -> None:
@@ -76,7 +76,7 @@ class ChatService:
         text: str,
         timestamp: datetime,
     ) -> Message:
-        bot = await self._bot_service.get_record(username)
+        bot = await self._bot_service.get_by_username(username)
         message = Message(
             id=message_id,
             bot_id=bot.bot_id,
@@ -90,8 +90,8 @@ class ChatService:
         if stored is None:
             raise NoActiveConversationError(chat_id)
 
-        token = await self._bot_service.get_token(username)
-        delivered = await self._telegram.send(token, chat_id, text)
+        credentials = await self._bot_service.get_token(username)
+        delivered = await self._messaging.send_text(credentials, chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
         await self._repository.update_message_status(
@@ -128,7 +128,7 @@ class ChatService:
             return
 
         try:
-            bot = await self._bot_service.get_record_by_id(bot_id)
+            bot = await self._bot_service.get_by_id(bot_id)
         except BotNotFoundError:
             logger.warning("Incoming for unknown bot_id %s; ignoring", bot_id)
             return

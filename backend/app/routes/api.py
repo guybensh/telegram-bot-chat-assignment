@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from ..domain.bot import BotNotFoundError
 from ..domain.bot.record import BotInboxItem
 from ..domain.chat import NoActiveConversationError
-from ..deps import Dependencies
+from ..bootstrap import Dependencies
 from ..models import ConversationSummary, Message, SendMessageRequest
 
 router = APIRouter()

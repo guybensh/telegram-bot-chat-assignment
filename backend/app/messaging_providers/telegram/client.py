@@ -5,25 +5,27 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-class TelegramAPI:
-    """Thin async wrapper over the Telegram Bot HTTP API.
+class TelegramClient:
+    """Stateless Telegram Bot HTTP client — one shared transport, token per call."""
 
-    No business logic — just the handful of endpoints we use, each returning a
-    simple result and swallowing transport errors so callers can stay clean.
-    """
-
-    def __init__(self, token: str, api_base: str) -> None:
-        self._base = f"{api_base}/bot{token}"
+    def __init__(self, api_base: str, *, mock: bool = False) -> None:
+        self._api_base = api_base
+        self._mock = mock
         # Read timeout must exceed the long-poll timeout used in get_updates.
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(40.0))
+        self._http = httpx.AsyncClient(timeout=httpx.Timeout(40.0))
+
+    def _url(self, token: str, method: str) -> str:
+        return f"{self._api_base}/bot{token}/{method}"
 
     async def close(self) -> None:
-        await self._client.aclose()
+        await self._http.aclose()
 
-    async def get_me(self) -> dict | None:
+    async def get_me(self, token: str) -> dict | None:
         """Fetch bot profile metadata (name, username) via getMe."""
+        if self._mock:
+            return None
         try:
-            resp = await self._client.get(f"{self._base}/getMe")
+            resp = await self._http.get(self._url(token, "getMe"))
             data = resp.json()
             if data.get("ok"):
                 return data.get("result")
@@ -31,10 +33,13 @@ class TelegramAPI:
             logger.exception("getMe failed")
         return None
 
-    async def send_message(self, chat_id: int, text: str) -> bool:
+    async def send_message(self, token: str, chat_id: int, text: str) -> bool:
+        if self._mock:
+            logger.info("Mock mode: simulating successful Telegram delivery")
+            return True
         try:
-            resp = await self._client.post(
-                f"{self._base}/sendMessage",
+            resp = await self._http.post(
+                self._url(token, "sendMessage"),
                 json={"chat_id": chat_id, "text": text},
             )
             return bool(resp.json().get("ok"))
@@ -42,7 +47,9 @@ class TelegramAPI:
             logger.exception("sendMessage failed")
             return False
 
-    async def get_updates(self, offset: int, timeout: int = 30) -> list[dict] | None:
+    async def get_updates(
+        self, token: str, offset: int, timeout: int = 30
+    ) -> list[dict] | None:
         """Long-poll for updates.
 
         Returns the (possibly empty) list of updates on success, or None on
@@ -50,12 +57,14 @@ class TelegramAPI:
         bot. The caller distinguishes None to back off instead of hammering.
         """
         try:
-            resp = await self._client.get(
-                f"{self._base}/getUpdates",
+            resp = await self._http.get(
+                self._url(token, "getUpdates"),
                 params={"offset": offset, "timeout": timeout},
             )
             if resp.status_code != 200:
-                logger.warning("getUpdates HTTP %s: %s", resp.status_code, resp.text[:200])
+                logger.warning(
+                    "getUpdates HTTP %s: %s", resp.status_code, resp.text[:200]
+                )
                 return None
             data = resp.json()
             return data.get("result", []) if data.get("ok") else None
@@ -63,20 +72,24 @@ class TelegramAPI:
             logger.exception("getUpdates failed")
             return None
 
-    async def set_webhook(self, url: str, secret: str | None = None) -> bool:
+    async def set_webhook(
+        self, token: str, url: str, secret: str | None = None
+    ) -> bool:
         payload: dict = {"url": url}
         if secret:
             payload["secret_token"] = secret
         try:
-            resp = await self._client.post(f"{self._base}/setWebhook", json=payload)
+            resp = await self._http.post(
+                self._url(token, "setWebhook"), json=payload
+            )
             return bool(resp.json().get("ok"))
         except Exception:
             logger.exception("setWebhook failed")
             return False
 
-    async def delete_webhook(self) -> bool:
+    async def delete_webhook(self, token: str) -> bool:
         try:
-            resp = await self._client.post(f"{self._base}/deleteWebhook")
+            resp = await self._http.post(self._url(token, "deleteWebhook"))
             return bool(resp.json().get("ok"))
         except Exception:
             logger.exception("deleteWebhook failed")

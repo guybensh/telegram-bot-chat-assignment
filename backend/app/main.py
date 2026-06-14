@@ -4,8 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .domain.bot.bootstrap import load_bots_from_config
-from .deps import build_dependencies
+from .bootstrap import build_dependencies, load_bots_from_config
 from .routes import build_webhook_router
 from .routes.api import register_routes
 
@@ -16,7 +15,7 @@ deps = build_dependencies()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     bots = await load_bots_from_config(
-        deps.settings, deps.bot_service, deps.telegram_gateway
+        deps.settings, deps.bot_service, deps.message_provider
     )
     for bot in bots:
         logger.info("Registered bot @%s (bot_id=%s)", bot.username, bot.bot_id)
@@ -40,7 +39,7 @@ app.add_middleware(
 app.include_router(register_routes(deps))
 app.include_router(
     build_webhook_router(
-        parser=deps.telegram_parser,
+        message_provider=deps.message_provider,
         chat=deps.chat,
         bot_service=deps.bot_service,
         webhook_path=deps.settings.telegram_webhook_path,

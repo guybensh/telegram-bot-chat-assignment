@@ -1,6 +1,11 @@
-from .api import TelegramAPI
-from .gateway import TelegramGateway
-from .service import IncomingMessage, TelegramService
+from ..types import IncomingMessage
+from .client import TelegramClient
+from .provider import TelegramProvider
 from .utils import generate_telegram_webhook_url
 
-__all__ = ["IncomingMessage", "TelegramAPI", "TelegramGateway", "TelegramService"]
+__all__ = [
+    "IncomingMessage",
+    "TelegramClient",
+    "TelegramProvider",
+    "generate_telegram_webhook_url",
+]

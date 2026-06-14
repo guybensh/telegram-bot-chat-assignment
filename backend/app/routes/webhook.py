@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, Request
 from ..domain.bot import BotNotFoundError, BotService
 from ..domain.chat import ChatService
 from ..middleware import telegram_authentication
-from ..messaging_providers.telegram import TelegramService
+from ..messaging_providers import MessageProvider
 
 logger = logging.getLogger(__name__)
 
 
 def build_webhook_router(
     *,
-    parser: TelegramService,
+    message_provider: MessageProvider,
     chat: ChatService,
     bot_service: BotService,
     webhook_path: str,
@@ -32,7 +32,7 @@ def build_webhook_router(
             logger.warning("Webhook for unknown bot token")
             return {"ok": True}
 
-        incoming = parser.process_update(await request.json())
+        incoming = message_provider.parse_incoming(await request.json())
         if incoming is not None:
             logger.info(
                 "Update via WEBHOOK (bot=%s, chat=%s)",

@@ -3,8 +3,8 @@ import logging
 from datetime import datetime, timezone
 
 from ...domain.chat import ChatService
-from .gateway import TelegramGateway
-from .service import IncomingMessage, TelegramService
+from ...messaging_providers.types import IncomingMessage
+from .provider import TelegramProvider
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +16,13 @@ class TelegramPoller:
 
     def __init__(
         self,
-        gateway: TelegramGateway,
-        parser: TelegramService,
+        provider: TelegramProvider,
         chat: ChatService,
         *,
         bot_id: int,
         token: str,
     ) -> None:
-        self._gateway = gateway
-        self._parser = parser
+        self._provider = provider
         self._chat = chat
         self._bot_id = bot_id
         self._token = token
@@ -50,7 +48,7 @@ class TelegramPoller:
         logger.info("Telegram polling started for bot_id=%s", self._bot_id)
         while True:
             try:
-                updates = await self._gateway.get_updates(
+                updates = await self._provider.get_updates(
                     self._token, self._offset
                 )
                 if updates is None:
@@ -60,7 +58,7 @@ class TelegramPoller:
                     logger.info("Received %d update(s) via POLLING", len(updates))
                 for update in updates:
                     self._offset = update["update_id"] + 1
-                    incoming = self._parser.process_update(update)
+                    incoming = self._provider.parse_incoming_message(update)
                     if incoming is not None:
                         logger.info(
                             "Update via POLLING (update_id=%s, chat=%s)",

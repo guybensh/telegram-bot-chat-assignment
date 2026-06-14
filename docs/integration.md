@@ -53,5 +53,5 @@ The WebSocket is a general server-push channel, not just for chat messages. Rece
 ## Key decisions to document
 
 - Webhook URL must be registered with Telegram via `setWebhook` — this requires a public HTTPS endpoint (use ngrok locally)
-- The bot token is configured once in the backend environment and never exposed to the client
+- Bot tokens live in `backend/app/config/bots/*.json` on the server and are never exposed to the client
 - Message IDs are generated server-side so receipts can be correlated correctly across the WebSocket and REST response
