@@ -17,10 +17,9 @@ class ChatRepository(ABC):
     """
 
     @abstractmethod
-    async def register_chat(self, chat_id: int, max_active: int) -> bool:
+    async def register_chat(self, chat_id: int) -> bool:
         """Admit `chat_id` as an active conversation if it is already active, or
-        if there is capacity (fewer than `max_active` active chats). Returns
-        whether the chat is active afterward."""
+        if there is capacity. Returns whether the chat is active afterward."""
 
     @abstractmethod
     async def is_active_chat(self, chat_id: int) -> bool:
@@ -31,18 +30,21 @@ class ChatRepository(ABC):
         """The chat_ids of all active conversations."""
 
     @abstractmethod
-    async def add(self, chat_id: int, message: Message) -> Message:
-        """Persist `message` in conversation `chat_id`."""
+    async def add_message(self, chat_id: int, message: Message) -> Message | None:
+        """Persist `message` when `chat_id` is active; otherwise return None.
+
+        Must be atomic so a concurrent reset cannot slip in between a separate
+        active check and a write."""
 
     @abstractmethod
-    async def update_status(
+    async def update_message_status(
         self, chat_id: int, message_id: str, status: Status
     ) -> Message | None:
         """Update the status of message `message_id` within conversation
         `chat_id`; returns the message, or None if not found."""
 
     @abstractmethod
-    async def list(self, chat_id: int) -> list[Message]:
+    async def get_conversation(self, chat_id: int) -> list[Message]:
         """A conversation's messages, ordered by timestamp."""
 
     @abstractmethod

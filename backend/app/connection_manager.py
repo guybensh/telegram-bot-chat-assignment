@@ -28,10 +28,11 @@ class ConnectionManager:
         async with self._lock:
             self._connections.discard(websocket)
 
-    def has_clients(self) -> bool:
+    async def has_clients(self) -> bool:
         """Whether any agent is currently connected. Used to gate incoming
         messages — don't accept a conversation when no agent is there."""
-        return bool(self._connections)
+        async with self._lock:
+            return bool(self._connections)
 
     async def broadcast(self, event: dict) -> None:
         async with self._lock:

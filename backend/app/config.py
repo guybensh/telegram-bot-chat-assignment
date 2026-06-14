@@ -1,6 +1,7 @@
 import os
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Selects which env overlay to load on top of `.env`. Default "production" loads
@@ -47,6 +48,16 @@ class Settings(BaseSettings):
     telegram_webhook_url: str = ""
     telegram_webhook_path: str = "/telegram/webhook"
     telegram_webhook_secret: str = ""
+
+    # Comma-separated browser origins allowed on non-webhook API routes.
+    cors_allowed_origins: list[str] = ["http://localhost:5173"]
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def _split_cors_origins(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value  # type: ignore[return-value]
 
 
 @lru_cache
