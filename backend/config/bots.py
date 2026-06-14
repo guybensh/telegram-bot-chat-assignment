@@ -3,15 +3,15 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from ..config import Settings
+from .settings import Settings
 
 logger = logging.getLogger(__name__)
 
 
 class BotConfigFile(BaseModel):
-    """Per-bot settings loaded from a JSON file in the bots config directory."""
+    """Per-bot settings loaded from a JSON file in backend/config/bots/."""
 
     token: str
     max_active_chats: int | None = None
@@ -24,21 +24,23 @@ class BotConfigEntry:
     source: str
 
 
-def resolve_bots_config_dir(settings: Settings) -> Path | None:
-    """Find the bots config directory whether uvicorn runs from repo root or backend/."""
-    for candidate in (Path(settings.bots_config_dir), Path("..") / settings.bots_config_dir):
-        if candidate.is_dir():
-            return candidate.resolve()
-    return None
+def _backend_root() -> Path:
+    # backend/config/bots.py -> backend/
+    return Path(__file__).resolve().parents[1]
+
+
+def resolve_bots_config_dir() -> Path:
+    """Return backend/config/bots/."""
+    return (_backend_root() / "config" / "bots").resolve()
 
 
 def load_bot_config_entries(settings: Settings) -> list[BotConfigEntry]:
-    """Load every *.json bot config file from the configured directory."""
-    config_dir = resolve_bots_config_dir(settings)
-    if config_dir is None:
+    """Load every *.json bot config file from backend/config/bots/."""
+    config_dir = resolve_bots_config_dir()
+    if not config_dir.is_dir():
         logger.warning(
-            "Bots config directory %r not found — add JSON files under bots/",
-            settings.bots_config_dir,
+            "Bots config directory %s not found — add JSON files under backend/config/bots/",
+            config_dir,
         )
         return []
 

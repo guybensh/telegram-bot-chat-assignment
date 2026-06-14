@@ -28,7 +28,7 @@ export async function fetchBotConversations(botUsername) {
  * Admin/dev: clear all conversation state on the server.
  */
 export async function resetChat() {
-  const res = await fetch(`${API_URL}/admin/reset`, { method: "POST" });
+  const res = await fetch(`${API_URL}/reset`, { method: "POST" });
   if (!res.ok) {
     throw new Error(`Reset failed (${res.status})`);
   }

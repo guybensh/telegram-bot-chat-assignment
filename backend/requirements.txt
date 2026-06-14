@@ -4,7 +4,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 
-# Settings loaded from environment / .env (see app/config.py).
+# Settings loaded from environment / .env (see config/settings.py).
 pydantic-settings==2.7.1
 
 # Async HTTP client for the Telegram Bot API (send + receive).

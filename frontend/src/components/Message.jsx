@@ -8,6 +8,12 @@ const STATUS_LABEL = {
   failed: "⚠ failed",
 };
 
+const SENDER_LABEL = {
+  user: "user",
+  agent: "agent",
+  bot: "bot",
+};
+
 function formatTime(timestamp) {
   if (!timestamp) return "";
   return new Date(timestamp).toLocaleTimeString([], {
@@ -18,8 +24,13 @@ function formatTime(timestamp) {
 
 export function Message({ message }) {
   const isOutgoing = message.sender !== "user";
+  const senderLabel = SENDER_LABEL[message.sender] ?? message.sender;
+
   return (
     <div className={`chat-message ${isOutgoing ? "outgoing" : "incoming"}`}>
+      {!isOutgoing && (
+        <span className="chat-sender-label">{senderLabel}</span>
+      )}
       <div className="chat-bubble">
         <div className="chat-text">{message.text}</div>
         <div className="chat-meta">
@@ -31,6 +42,9 @@ export function Message({ message }) {
           )}
         </div>
       </div>
+      {isOutgoing && (
+        <span className="chat-sender-label">{senderLabel}</span>
+      )}
     </div>
   );
 }

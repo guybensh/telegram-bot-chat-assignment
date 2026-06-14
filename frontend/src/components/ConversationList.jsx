@@ -21,6 +21,7 @@ function previewText(conversation) {
 }
 
 export function ConversationList({
+  botUsername,
   conversations,
   selectedChatId,
   unreadByChatId,
@@ -32,7 +33,10 @@ export function ConversationList({
         <h2>Conversations</h2>
       </div>
       <ul className="inbox-list">
-        {conversations.length === 0 && (
+        {!botUsername && (
+          <li className="inbox-empty">Select a bot to view conversations.</li>
+        )}
+        {botUsername && conversations.length === 0 && (
           <li className="inbox-empty">
             No active conversations yet. When a Telegram user messages the bot,
             the thread will appear here.
@@ -40,7 +44,8 @@ export function ConversationList({
         )}
         {conversations.map((conversation) => {
           const active = conversation.chat_id === selectedChatId;
-          const unread = unreadByChatId[conversation.chat_id] || 0;
+          const unread =
+            unreadByChatId[`${botUsername}:${conversation.chat_id}`] || 0;
           return (
             <li key={conversation.chat_id}>
               <button
@@ -60,9 +65,11 @@ export function ConversationList({
                   <span className="inbox-list-item-preview">
                     {previewText(conversation)}
                   </span>
-                  {unread > 0 && (
-                    <span className="inbox-unread-badge">{unread}</span>
-                  )}
+                  <span className="inbox-list-item-trailing">
+                    {unread > 0 && (
+                      <span className="inbox-unread-badge">{unread}</span>
+                    )}
+                  </span>
                 </div>
               </button>
             </li>

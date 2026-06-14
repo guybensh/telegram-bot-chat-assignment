@@ -22,9 +22,9 @@ Thumbs.db
 !.env.*.example
 
 # Per-bot config files (contain tokens)
-bots/*.json
-!bots/*.example
-!bots/*.json.example
+backend/config/bots/*.json
+!backend/config/bots/*.example
+!backend/config/bots/*.json.example
 
 # ======================
 # Python

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from ..bot import BotNotFoundError
-from ..bot.record import BotRecord
-from ..chat import NoActiveConversationError
+from ..domain.bot import BotNotFoundError
+from ..domain.bot.record import BotInboxItem
+from ..domain.chat import NoActiveConversationError
 from ..deps import Dependencies
 from ..models import ConversationSummary, Message, SendMessageRequest
 
@@ -14,14 +14,27 @@ def register_routes(deps: Dependencies) -> APIRouter:
     async def health():
         return {"status": "ok"}
 
-    @router.post("/admin/reset")
+    @router.post("/reset")
     async def admin_reset():
         await deps.chat.reset()
         return {"status": "reset"}
 
-    @router.get("/bots", response_model=list[BotRecord])
+    @router.get("/bots", response_model=list[BotInboxItem])
     async def get_bots():
-        return await deps.bot_service.list_bots()
+        records = await deps.bot_service.list_bots()
+        items: list[BotInboxItem] = []
+        for bot in records:
+            active_chats = await deps.chat.count_active_chats(bot.bot_id)
+            items.append(
+                BotInboxItem(
+                    bot_id=bot.bot_id,
+                    bot_name=bot.bot_name,
+                    username=bot.username,
+                    max_chats=bot.max_chats,
+                    active_chats=active_chats,
+                )
+            )
+        return items
 
     @router.get(
         "/bots/{username}/conversations",

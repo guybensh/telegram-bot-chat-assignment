@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from ...chat import ChatService
+from ...domain.chat import ChatService
 from .gateway import TelegramGateway
 from .service import IncomingMessage, TelegramService
 

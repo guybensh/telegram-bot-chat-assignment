@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from ...models import Message, Status
+from ....models import Message, Status
 
 
 class ChatRepository(ABC):

@@ -15,7 +15,7 @@ def _env_files() -> tuple[str, ...]:
 
 
 class Settings(BaseSettings):
-    """General app configuration (.env). Bot tokens live in bots/*.json files."""
+    """General app configuration (.env). Bot tokens live in config/bots/*.json."""
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),
@@ -25,9 +25,6 @@ class Settings(BaseSettings):
 
     # Default max active conversations when a bot JSON file omits max_active_chats.
     default_max_active_chats: int = 10
-
-    # Directory of per-bot JSON configs (token + max_active_chats), repo-relative.
-    bots_config_dir: str = "bots"
 
     telegram_api_base: str = "https://api.telegram.org"
     telegram_mode: str = "webhook"

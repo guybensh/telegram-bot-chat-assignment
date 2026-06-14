@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from .bot import BotService
-from .bot.bootstrap import TelegramReceiveRuntime
-from .bot.repository import InMemoryBotRepository
-from .chat import ChatService
-from .chat.repository import InMemoryChatRepository
-from .config import Settings, get_settings
+from .domain.bot import BotService
+from .domain.bot.bootstrap import TelegramReceiveRuntime
+from .domain.bot.repository import InMemoryBotRepository
+from .domain.chat import ChatService
+from .domain.chat.repository import InMemoryChatRepository
+from config import Settings, get_settings
 from .connection_manager import ConnectionManager
 from .logging_setup import configure_logging
 from .messaging_providers.telegram import TelegramGateway, TelegramService
