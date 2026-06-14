@@ -1,6 +1,6 @@
 import asyncio
 
-from ...models import Message, Status
+from ....models import Message, Status
 from .chat_repository import ChatRepository
 
 

@@ -3,8 +3,8 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, Header, HTTPException, Request
 
-from ..bot import BotNotFoundError
-from ..config import Settings, get_settings
+from ..domain.bot import BotNotFoundError
+from config import Settings, get_settings
 from ..deps import get_deps
 
 logger = logging.getLogger(__name__)

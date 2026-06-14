@@ -2,9 +2,9 @@ import logging
 from datetime import datetime, timezone
 
 from ..bot import BotNotFoundError, BotService
-from ..connection_manager import ConnectionManager
-from ..models import ConversationSummary, Message, Sender, Status
-from ..messaging_providers.telegram import IncomingMessage, TelegramGateway
+from ...connection_manager import ConnectionManager
+from ...models import ConversationSummary, Message, Sender, Status
+from ...messaging_providers.telegram import IncomingMessage, TelegramGateway
 from .repository import ChatRepository
 
 logger = logging.getLogger(__name__)

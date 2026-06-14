@@ -1,7 +1,6 @@
 import logging
 
-from .bot.config_loader import load_bot_config_entries
-from .config import Settings
+from config import Settings, load_bot_config_entries
 
 
 class _RedactTokenFilter(logging.Filter):

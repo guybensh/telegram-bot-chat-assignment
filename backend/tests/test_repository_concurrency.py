@@ -7,7 +7,7 @@ Run from backend/:
 import asyncio
 from datetime import datetime, timezone
 
-from app.chat.repository.in_memory_chat_repository import InMemoryChatRepository
+from app.domain.chat.repository.in_memory_chat_repository import InMemoryChatRepository
 from app.models import Message, Sender, Status
 
 _BOT_ID = 1

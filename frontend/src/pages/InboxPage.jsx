@@ -2,7 +2,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useInbox } from "../hooks/useInbox";
 import { BotList } from "../components/BotList";
 import { ConversationList } from "../components/ConversationList";
-import { ConversationPanel } from "../components/ConversationPanel";
+import { Chat } from "../components/Chat";
+import { ConnectionStatus } from "../components/ConnectionStatus";
 
 export function InboxPage() {
   const { botUsername, chatId: chatIdParam } = useParams();
@@ -33,29 +34,32 @@ export function InboxPage() {
 
   const handleReset = async () => {
     await reset();
-    if (botUsername) navigate(`/bots/${botUsername}`, { replace: true });
+    if (botUsername) navigate(`/`, { replace: true });
   };
 
   return (
     <div className="inbox-page">
       <div className="inbox-page-inner">
         <div className="inbox-toolbar">
-          <button
-            type="button"
-            className="inbox-toolbar-button"
-            onClick={() => navigate("/")}
-            title="Back to inbox home"
-          >
-            Home
-          </button>
-          <button
-            type="button"
-            className="inbox-toolbar-button inbox-toolbar-button--danger"
-            onClick={handleReset}
-            title="Clear all conversations (dev/admin)"
-          >
-            Reset
-          </button>
+          <div className="inbox-toolbar-actions">
+            <button
+              type="button"
+              className="inbox-toolbar-button"
+              onClick={() => navigate("/")}
+              title="Back to inbox home"
+            >
+              Home
+            </button>
+            <button
+              type="button"
+              className="inbox-toolbar-button inbox-toolbar-button--danger"
+              onClick={handleReset}
+              title="Clear all conversations (dev/admin)"
+            >
+              Reset
+            </button>
+          </div>
+          <ConnectionStatus status={connectionStatus} />
         </div>
         <div className="inbox-shell">
           <BotList
@@ -71,11 +75,10 @@ export function InboxPage() {
             unreadByChatId={unreadByChatId}
             onSelect={handleSelectConversation}
           />
-          <ConversationPanel
+          <Chat
             botUsername={botUsername}
             conversation={selectedConversation}
             messages={messages}
-            connectionStatus={connectionStatus}
             canSend={canSend}
             onSend={send}
           />

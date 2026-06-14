@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .bot.bootstrap import load_bots_from_config
+from .domain.bot.bootstrap import load_bots_from_config
 from .deps import build_dependencies
 from .routes import build_webhook_router
 from .routes.api import register_routes

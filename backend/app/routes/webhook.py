@@ -2,8 +2,8 @@ import logging
 
 from fastapi import APIRouter, Depends, Request
 
-from ..bot import BotNotFoundError, BotService
-from ..chat import ChatService
+from ..domain.bot import BotNotFoundError, BotService
+from ..domain.chat import ChatService
 from ..middleware import telegram_authentication
 from ..messaging_providers.telegram import TelegramService
 

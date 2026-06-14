@@ -1,12 +1,12 @@
 import logging
 
-from ..config import Settings
+from config import Settings
 from ..chat import ChatService
-from ..messaging_providers.telegram import TelegramGateway, TelegramService
-from ..messaging_providers.telegram.poller import TelegramPoller
-from ..messaging_providers.telegram.utils import generate_telegram_webhook_url
+from ...messaging_providers.telegram import TelegramGateway, TelegramService
+from ...messaging_providers.telegram.poller import TelegramPoller
+from ...messaging_providers.telegram.utils import generate_telegram_webhook_url
 from .bot_service import BotRegistrationError, BotService
-from .config_loader import load_bot_config_entries
+from config import load_bot_config_entries
 from .record import BotRecord
 
 logger = logging.getLogger(__name__)

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from ..bot import BotNotFoundError
-from ..bot.record import BotInboxItem
-from ..chat import NoActiveConversationError
+from ..domain.bot import BotNotFoundError
+from ..domain.bot.record import BotInboxItem
+from ..domain.chat import NoActiveConversationError
 from ..deps import Dependencies
 from ..models import ConversationSummary, Message, SendMessageRequest
 
@@ -14,7 +14,7 @@ def register_routes(deps: Dependencies) -> APIRouter:
     async def health():
         return {"status": "ok"}
 
-    @router.post("/admin/reset")
+    @router.post("/reset")
     async def admin_reset():
         await deps.chat.reset()
         return {"status": "reset"}

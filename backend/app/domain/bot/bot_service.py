@@ -1,5 +1,5 @@
-from ..config import Settings
-from ..messaging_providers.telegram import TelegramGateway
+from config import Settings
+from ...messaging_providers.telegram import TelegramGateway
 from .record import BotRecord
 from .repository import BotRepository
 
