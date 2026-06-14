@@ -1,15 +1,23 @@
 import { API_URL } from "../config";
 
-// Thin REST layer. The client never talks to Telegram directly — it only knows
-// about these two endpoints. Server-initiated events arrive over the WebSocket
-// (see hooks/useWebSocket.js), keeping a clean request/response vs. push split.
+/**
+ * List configured Telegram bots for the inbox sidebar.
+ */
+export async function fetchBots() {
+  const res = await fetch(`${API_URL}/bots`);
+  if (!res.ok) {
+    throw new Error(`Failed to load bots (${res.status})`);
+  }
+  return res.json();
+}
 
 /**
- * List the active conversations so the client knows which chat exists and which
- * chat_id to reply to. Returns an array of `{ chat_id }`.
+ * List active conversations for one bot, with preview metadata for the inbox.
  */
-export async function fetchConversations() {
-  const res = await fetch(`${API_URL}/conversations`);
+export async function fetchBotConversations(botUsername) {
+  const res = await fetch(
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/conversations`
+  );
   if (!res.ok) {
     throw new Error(`Failed to load conversations (${res.status})`);
   }
@@ -30,8 +38,10 @@ export async function resetChat() {
 /**
  * Load one conversation's message history, in server-defined order.
  */
-export async function fetchHistory(chatId) {
-  const res = await fetch(`${API_URL}/messages?chat_id=${chatId}`);
+export async function fetchHistory(botUsername, chatId) {
+  const res = await fetch(
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages?chat_id=${chatId}`
+  );
   if (!res.ok) {
     throw new Error(`Failed to load history (${res.status})`);
   }
@@ -39,18 +49,17 @@ export async function fetchHistory(chatId) {
 }
 
 /**
- * Forward an outgoing message to the connected Telegram chat. The client sends
- * the full message object (id, text, timestamp, sender, status) so the server
- * stores it verbatim — using the timestamp to order the conversation and the
- * sender/status as given — rather than reconstructing the record itself.
- * Returns the stored message; the client adopts any status the server reports.
+ * Forward an outgoing message to the connected Telegram chat.
  */
-export async function sendMessage(message) {
-  const res = await fetch(`${API_URL}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(message),
-  });
+export async function sendMessage(botUsername, message) {
+  const res = await fetch(
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message),
+    }
+  );
   if (!res.ok) {
     throw new Error(`Send failed (${res.status})`);
   }

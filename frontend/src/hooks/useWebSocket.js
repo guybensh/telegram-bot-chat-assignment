@@ -9,7 +9,7 @@ const MAX_BACKOFF_MS = 30000;
  * Responsibilities are deliberately narrow: keep a single socket open to `url`,
  * hand every parsed message to `onMessage`, and transparently reconnect with
  * exponential backoff if the connection drops. It knows nothing about chat
- * semantics — that lives in useChat — so it can carry any future event type.
+ * semantics — that lives in useInbox — so it can carry any future event type.
  *
  * Returns the connection status: "connecting" | "open" | "closed".
  *

@@ -6,45 +6,39 @@ from ...models import Message, Status
 class ChatRepository(ABC):
     """Data-access layer (DAL) for conversations and their messages.
 
-    `ChatService` depends on this abstraction rather than a concrete store, so
-    the storage backend can be swapped — in-memory today, a database tomorrow —
-    without changing any domain logic. The current implementation is
-    `InMemoryChatRepository`; a DB-backed one would implement the same interface.
-
-    Concurrency contract: `register_chat` must perform its capacity check and
-    admission atomically with respect to concurrent callers, so the active-chat
-    limit can never be exceeded by a race.
+    All state is scoped by `bot_id` so multiple bots can share this store
+    without chat_id collisions.
     """
 
     @abstractmethod
-    async def register_chat(self, chat_id: int) -> bool:
-        """Admit `chat_id` as an active conversation if it is already active, or
-        if there is capacity. Returns whether the chat is active afterward."""
+    async def register_chat(
+        self, bot_id: int, chat_id: int, max_chats: int
+    ) -> bool:
+        """Admit `chat_id` for `bot_id` if already active or under that bot's
+        capacity. Returns whether the chat is active afterward."""
 
     @abstractmethod
-    async def is_active_chat(self, chat_id: int) -> bool:
-        """Whether `chat_id` is an active conversation."""
+    async def is_active_chat(self, bot_id: int, chat_id: int) -> bool:
+        """Whether `chat_id` is an active conversation for `bot_id`."""
 
     @abstractmethod
-    async def active_chats(self) -> list[int]:
-        """The chat_ids of all active conversations."""
+    async def active_chats(self, bot_id: int) -> list[int]:
+        """Active chat_ids for one bot."""
 
     @abstractmethod
-    async def add_message(self, chat_id: int, message: Message) -> Message | None:
-        """Persist `message` when `chat_id` is active; otherwise return None.
-
-        Must be atomic so a concurrent reset cannot slip in between a separate
-        active check and a write."""
+    async def add_message(
+        self, bot_id: int, chat_id: int, message: Message
+    ) -> Message | None:
+        """Persist `message` when the chat is active; otherwise return None."""
 
     @abstractmethod
     async def update_message_status(
-        self, chat_id: int, message_id: str, status: Status
+        self, bot_id: int, chat_id: int, message_id: str, status: Status
     ) -> Message | None:
-        """Update the status of message `message_id` within conversation
-        `chat_id`; returns the message, or None if not found."""
+        """Update delivery status for a message within a conversation."""
 
     @abstractmethod
-    async def get_conversation(self, chat_id: int) -> list[Message]:
+    async def get_conversation(self, bot_id: int, chat_id: int) -> list[Message]:
         """A conversation's messages, ordered by timestamp."""
 
     @abstractmethod

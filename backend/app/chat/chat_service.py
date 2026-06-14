@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
+from ..bot import BotNotFoundError, BotService
 from ..connection_manager import ConnectionManager
-from ..models import Message, Sender, Status
-from ..messaging_providers.telegram import IncomingMessage, TelegramService
+from ..models import ConversationSummary, Message, Sender, Status
+from ..messaging_providers.telegram import IncomingMessage, TelegramGateway
 from .repository import ChatRepository
 
 logger = logging.getLogger(__name__)
@@ -16,69 +17,96 @@ class NoActiveConversationError(Exception):
 
 
 class ChatService:
-    """The chat domain — the single place that decides how messages are
-    processed in each direction.
-
-    It coordinates three collaborators that have no knowledge of one another:
-    the chat repository (DAL — state), the connection manager (agent clients),
-    and the Telegram gateway (delivery + receipt of updates). It depends on the
-    `ChatRepository` interface, not a concrete store, so persistence is
-    swappable. The active-conversation limit is owned by the repository.
-    """
+    """The chat domain — message processing scoped per bot."""
 
     def __init__(
         self,
         repository: ChatRepository,
         connection_manager: ConnectionManager,
-        telegram: TelegramService,
+        telegram: TelegramGateway,
+        bot_service: BotService,
     ) -> None:
         self._repository = repository
         self._connection_manager = connection_manager
         self._telegram = telegram
+        self._bot_service = bot_service
 
-    async def list_conversations(self) -> list[int]:
-        return await self._repository.active_chats()
+    async def list_conversation_summaries(
+        self, username: str
+    ) -> list[ConversationSummary]:
+        bot = await self._bot_service.get_record(username)
+        summaries: list[ConversationSummary] = []
+        for chat_id in await self._repository.active_chats(bot.bot_id):
+            messages = await self._repository.get_conversation(bot.bot_id, chat_id)
+            last = messages[-1] if messages else None
+            summaries.append(
+                ConversationSummary(
+                    chat_id=chat_id,
+                    bot_id=bot.bot_id,
+                    bot_username=bot.username,
+                    title=f"Chat {chat_id}",
+                    last_message_text=last.text if last else None,
+                    last_message_at=last.timestamp if last else None,
+                    last_sender=last.sender if last else None,
+                )
+            )
+        return sorted(
+            summaries,
+            key=lambda item: item.last_message_at
+            or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
 
-    async def get_history(self, chat_id: int) -> list[Message]:
-        return await self._repository.get_conversation(chat_id)
+    async def get_history(self, username: str, chat_id: int) -> list[Message]:
+        bot = await self._bot_service.get_record(username)
+        return await self._repository.get_conversation(bot.bot_id, chat_id)
 
     async def reset(self) -> None:
-        """Admin/dev: clear all conversation state and tell every connected
-        client to reset, so the no-active-chat flow can be exercised again."""
         await self._repository.reset()
         await self._connection_manager.broadcast({"type": "reset"})
 
-    # --- outgoing: agent -> Telegram participant ------------------------
-
     async def send_message(
-        self, message_id: str, chat_id: int, text: str, timestamp: datetime
+        self,
+        username: str,
+        message_id: str,
+        chat_id: int,
+        text: str,
+        timestamp: datetime,
     ) -> Message:
-        """Store an outgoing message, deliver it to the participant, record the
-        outcome, and broadcast a receipt so every agent client converges.
-
-        Raises NoActiveConversationError if `chat_id` is not an active chat — the
-        bot can only reply within a conversation the participant started."""
+        bot = await self._bot_service.get_record(username)
         message = Message(
             id=message_id,
+            bot_id=bot.bot_id,
             chat_id=chat_id,
             text=text,
             timestamp=timestamp,
             sender=Sender.AGENT,
             status=Status.PENDING,
         )
-        stored = await self._repository.add_message(chat_id, message)
+        stored = await self._repository.add_message(bot.bot_id, chat_id, message)
         if stored is None:
             raise NoActiveConversationError(chat_id)
 
-        delivered = await self._telegram.send(chat_id, text)
+        token = await self._bot_service.get_token(username)
+        delivered = await self._telegram.send(token, chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
-        await self._repository.update_message_status(chat_id, message.id, status)
+        await self._repository.update_message_status(
+            bot.bot_id, chat_id, message.id, status
+        )
         message.status = status
-        logger.info("Outgoing [chat %s] %r -> %s", chat_id, text[:200], status.value)
+        logger.info(
+            "Outgoing [bot %s chat %s] %r -> %s",
+            bot.username,
+            chat_id,
+            text[:200],
+            status.value,
+        )
         await self._connection_manager.broadcast(
             {
                 "type": "receipt",
+                "bot_id": bot.bot_id,
+                "bot_username": bot.username,
                 "message_id": message.id,
                 "chat_id": chat_id,
                 "status": status.value,
@@ -86,13 +114,9 @@ class ChatService:
         )
         return message
 
-    # --- incoming: message provider -> agent clients ----------------
-
-    async def handle_incoming(self, incoming: IncomingMessage) -> None:
-        """Process a message from a Telegram participant: an agent must be
-        connected first, then admit the conversation (subject to the configured
-        limit), store it, and push it to every connected client."""
-        # The agent must connect first — reject if no client is present.
+    async def handle_incoming(
+        self, bot_id: int, incoming: IncomingMessage
+    ) -> None:
         if not await self._connection_manager.has_clients():
             logger.info(
                 "No agent connected; rejecting incoming from chat %s",
@@ -100,27 +124,46 @@ class ChatService:
             )
             return
 
+        try:
+            bot = await self._bot_service.get_record_by_id(bot_id)
+        except BotNotFoundError:
+            logger.warning("Incoming for unknown bot_id %s; ignoring", bot_id)
+            return
+
         message = Message(
             id=f"tg-{incoming.message_id}",
+            bot_id=bot.bot_id,
             chat_id=incoming.chat_id,
             text=incoming.text,
             timestamp=incoming.timestamp,
             sender=Sender.USER,
             status=Status.RECEIVED,
         )
-        if not await self._repository.register_chat(incoming.chat_id):
+        if not await self._repository.register_chat(
+            bot.bot_id, incoming.chat_id, bot.max_chats
+        ):
             logger.info(
-                "At active-chat capacity; ignoring chat %s",
+                "At active-chat capacity for bot %s; ignoring chat %s",
+                bot.username,
                 incoming.chat_id,
             )
             return
 
-        stored = await self._repository.add_message(incoming.chat_id, message)
+        stored = await self._repository.add_message(
+            bot.bot_id, incoming.chat_id, message
+        )
         if stored is None:
             return
         logger.info(
-            "Incoming [chat %s] %r", incoming.chat_id, incoming.text[:200]
+            "Incoming [bot %s chat %s] %r",
+            bot.username,
+            incoming.chat_id,
+            incoming.text[:200],
         )
         await self._connection_manager.broadcast(
-            {"type": "message", **message.model_dump(mode="json")}
+            {
+                "type": "message",
+                "bot_username": bot.username,
+                **message.model_dump(mode="json"),
+            }
         )

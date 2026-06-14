@@ -20,6 +20,17 @@ class TelegramAPI:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def get_me(self) -> dict | None:
+        """Fetch bot profile metadata (name, username) via getMe."""
+        try:
+            resp = await self._client.get(f"{self._base}/getMe")
+            data = resp.json()
+            if data.get("ok"):
+                return data.get("result")
+        except Exception:
+            logger.exception("getMe failed")
+        return None
+
     async def send_message(self, chat_id: int, text: str) -> bool:
         try:
             resp = await self._client.post(

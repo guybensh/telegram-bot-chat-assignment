@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class Sender(str, Enum):
@@ -31,16 +31,30 @@ class Status(str, Enum):
 class Message(BaseModel):
     """The single message shape shared by REST responses and WebSocket events.
 
-    `chat_id` is the Telegram conversation it belongs to — a first-class field
-    so the system extends from one conversation to many without a reshape.
+    `chat_id` is the Telegram conversation it belongs to. `bot_id` scopes it to
+    the bot that owns the thread — required because the same Telegram user id
+    can appear as `chat_id` across different bots.
     """
 
     id: str
+    bot_id: int
     chat_id: int
     text: str
     timestamp: datetime
     sender: Sender
     status: Status
+
+
+class ConversationSummary(BaseModel):
+    """Lightweight row for the inbox conversation list."""
+
+    chat_id: int
+    bot_id: int
+    bot_username: str
+    title: str
+    last_message_text: str | None = None
+    last_message_at: datetime | None = None
+    last_sender: Sender | None = None
 
 
 class SendMessageRequest(BaseModel):
