@@ -1,9 +1,9 @@
 import { ConnectionStatus } from "./ConnectionStatus";
 
-export function ChatHeader({ connectionStatus, onReset }) {
+export function ChatHeader({ title, connectionStatus, onReset }) {
   return (
     <header className="chat-header">
-      <h2>Telegram Chat</h2>
+      <h2>{title}</h2>
       <div className="chat-header-right">
         <ConnectionStatus status={connectionStatus} />
         <button

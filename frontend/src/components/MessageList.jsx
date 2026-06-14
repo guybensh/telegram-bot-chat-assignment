@@ -14,7 +14,7 @@ export function MessageList({ messages }) {
   return (
     <div className="chat-messages">
       {messages.length === 0 && (
-        <p className="chat-empty">No messages yet. Waiting for a user to connect...</p>
+        <p className="chat-empty">No messages in this conversation yet.</p>
       )}
       {messages.map((message) => (
         <Message key={keyOf(message)} message={message} />

@@ -1,22 +1,19 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import "./index.css";
-import { useChat } from "./hooks/useChat";
-import { ChatHeader } from "./components/ChatHeader";
-import { MessageList } from "./components/MessageList";
-import { MessageInput } from "./components/MessageInput";
+import { InboxPage } from "./pages/InboxPage";
 
-// Composition root: wire the chat state from useChat into the presentational
-// components. App holds no logic of its own, which keeps the data flow obvious.
 function App() {
-  const { messages, connectionStatus, send, canSend, reset } = useChat();
-
   return (
-    <div className="chat-page">
-      <div className="chat-container">
-        <ChatHeader connectionStatus={connectionStatus} onReset={reset} />
-        <MessageList messages={messages} />
-        <MessageInput onSend={send} disabled={!canSend} />
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<InboxPage />} />
+        <Route path="/bots/:botUsername" element={<InboxPage />} />
+        <Route
+          path="/bots/:botUsername/chats/:chatId"
+          element={<InboxPage />}
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

@@ -30,20 +30,17 @@ class TelegramService:
     route) takes the parsed message and passes it to `ChatService`.
     """
 
-    def __init__(self, api: TelegramAPI, mock: bool = False) -> None:
+    def __init__(self, api: TelegramAPI | None = None, mock: bool = False) -> None:
         self._api = api
-        # Mock mode never touches the real API: outgoing sends are simulated.
         self._mock = mock
 
     async def send(self, chat_id: int | None, text: str) -> bool:
-        """Deliver text to a Telegram chat; returns whether it was delivered.
-
-        A missing chat_id (no participant yet) is a delivery failure. Mock mode
-        always reports success without any network call.
-        """
+        """Deliver text to a Telegram chat; returns whether it was delivered."""
         if self._mock:
             logger.info("Mock mode: simulating successful Telegram delivery")
             return True
+        if self._api is None:
+            raise RuntimeError("TelegramService has no API client configured")
         if chat_id is None:
             logger.warning("No active Telegram chat yet; cannot deliver")
             return False
@@ -51,6 +48,8 @@ class TelegramService:
 
     async def get_updates(self, offset: int, timeout: int = 30) -> list[dict] | None:
         """Long-poll for raw updates (passthrough to the API). None on error."""
+        if self._api is None:
+            raise RuntimeError("TelegramService has no API client configured")
         return await self._api.get_updates(offset, timeout)
 
     def process_update(self, update: dict) -> IncomingMessage | None:
