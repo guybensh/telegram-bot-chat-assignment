@@ -4,22 +4,23 @@ import { Message } from "./Message";
 const keyOf = (m) => m.id;
 
 export function MessageList({ messages }) {
-  const bottomRef = useRef(null);
+  const containerRef = useRef(null);
 
-  // Keep the latest message in view as the conversation grows.
+  // Keep the latest message in view within the messages panel only.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = containerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   return (
-    <div className="chat-messages">
+    <div className="chat-messages" ref={containerRef}>
       {messages.length === 0 && (
         <p className="chat-empty">No messages in this conversation yet.</p>
       )}
       {messages.map((message) => (
         <Message key={keyOf(message)} message={message} />
       ))}
-      <div ref={bottomRef} />
     </div>
   );
 }

@@ -57,6 +57,9 @@ class ChatService:
             reverse=True,
         )
 
+    async def count_active_chats(self, bot_id: int) -> int:
+        return len(await self._repository.active_chats(bot_id))
+
     async def get_history(self, username: str, chat_id: int) -> list[Message]:
         bot = await self._bot_service.get_record(username)
         return await self._repository.get_conversation(bot.bot_id, chat_id)
