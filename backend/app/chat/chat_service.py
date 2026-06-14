@@ -23,7 +23,7 @@ class ChatService:
     the chat repository (DAL — state), the connection manager (agent clients),
     and the Telegram gateway (delivery + receipt of updates). It depends on the
     `ChatRepository` interface, not a concrete store, so persistence is
-    swappable. The active-conversation limit is injected from configuration.
+    swappable. The active-conversation limit is owned by the repository.
     """
 
     def __init__(
@@ -31,18 +31,16 @@ class ChatService:
         repository: ChatRepository,
         connection_manager: ConnectionManager,
         telegram: TelegramService,
-        max_active_chats: int = 1,
     ) -> None:
         self._repository = repository
         self._connection_manager = connection_manager
         self._telegram = telegram
-        self._max_active_chats = max_active_chats
 
     async def list_conversations(self) -> list[int]:
         return await self._repository.active_chats()
 
     async def get_history(self, chat_id: int) -> list[Message]:
-        return await self._repository.list(chat_id)
+        return await self._repository.get_conversation(chat_id)
 
     async def reset(self) -> None:
         """Admin/dev: clear all conversation state and tell every connected
@@ -60,9 +58,6 @@ class ChatService:
 
         Raises NoActiveConversationError if `chat_id` is not an active chat — the
         bot can only reply within a conversation the participant started."""
-        if not await self._repository.is_active_chat(chat_id):
-            raise NoActiveConversationError(chat_id)
-
         message = Message(
             id=message_id,
             chat_id=chat_id,
@@ -71,12 +66,14 @@ class ChatService:
             sender=Sender.AGENT,
             status=Status.PENDING,
         )
-        await self._repository.add(chat_id, message)
+        stored = await self._repository.add_message(chat_id, message)
+        if stored is None:
+            raise NoActiveConversationError(chat_id)
 
         delivered = await self._telegram.send(chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
-        await self._repository.update_status(chat_id, message.id, status)
+        await self._repository.update_message_status(chat_id, message.id, status)
         message.status = status
         logger.info("Outgoing [chat %s] %r -> %s", chat_id, text[:200], status.value)
         await self._connection_manager.broadcast(
@@ -89,26 +86,16 @@ class ChatService:
         )
         return message
 
-    # --- incoming: Telegram participant -> agent clients ----------------
+    # --- incoming: message provider -> agent clients ----------------
 
     async def handle_incoming(self, incoming: IncomingMessage) -> None:
         """Process a message from a Telegram participant: an agent must be
         connected first, then admit the conversation (subject to the configured
         limit), store it, and push it to every connected client."""
         # The agent must connect first — reject if no client is present.
-        if not self._connection_manager.has_clients():
+        if not await self._connection_manager.has_clients():
             logger.info(
                 "No agent connected; rejecting incoming from chat %s",
-                incoming.chat_id,
-            )
-            return
-
-        if not await self._repository.register_chat(
-            incoming.chat_id, self._max_active_chats
-        ):
-            logger.info(
-                "At active-chat capacity (%d); ignoring chat %s",
-                self._max_active_chats,
                 incoming.chat_id,
             )
             return
@@ -121,7 +108,16 @@ class ChatService:
             sender=Sender.USER,
             status=Status.RECEIVED,
         )
-        await self._repository.add(incoming.chat_id, message)
+        if not await self._repository.register_chat(incoming.chat_id):
+            logger.info(
+                "At active-chat capacity; ignoring chat %s",
+                incoming.chat_id,
+            )
+            return
+
+        stored = await self._repository.add_message(incoming.chat_id, message)
+        if stored is None:
+            return
         logger.info(
             "Incoming [chat %s] %r", incoming.chat_id, incoming.text[:200]
         )

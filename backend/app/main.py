@@ -3,9 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import (
     FastAPI,
-    Header,
     HTTPException,
-    Request,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -18,6 +16,8 @@ from .connection_manager import ConnectionManager
 from .models import Message, SendMessageRequest
 from .messaging_providers.telegram import TelegramAPI, TelegramService
 from .messaging_providers.telegram.poller import TelegramPoller
+from .messaging_providers.telegram.utils import generate_telegram_webhook_url
+from .routes import build_webhook_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -48,35 +48,14 @@ if settings.telegram_bot_token:
     logging.getLogger("httpx").addFilter(
         _RedactTokenFilter(settings.telegram_bot_token)
     )
-repository = InMemoryChatRepository()
+chat_repository = InMemoryChatRepository(max_active_chats=settings.max_active_chats)
 connection_manager = ConnectionManager()
 telegram_api = TelegramAPI(settings.telegram_bot_token, settings.telegram_api_base)
 telegram = TelegramService(telegram_api, mock=settings.telegram_mode == "mock")
-chat = ChatService(
-    repository, connection_manager, telegram, max_active_chats=settings.max_active_chats
-)
+chat = ChatService(chat_repository, connection_manager, telegram)
 # Drives the pull mechanism: fetches/parses updates in a loop and passes each
 # to chat.handle_incoming. (Webhook mode delivers inline in the webhook route.)
 poller = TelegramPoller(telegram, chat)
-
-WEBHOOK_ROUTE = f"{settings.telegram_webhook_path.rstrip('/')}/{{bot_token}}"
-
-
-def generate_telegram_webhook_url(
-    *,
-    public_base_url: str,
-    webhook_path: str,
-    bot_token: str,
-) -> str:
-    """
-    Build the full URL registered with Telegram's setWebhook.
-    The bot token is included as the final path segment so inbound webhook
-    requests can be routed and validated per bot.
-    """
-    return (
-        f"{public_base_url.rstrip('/')}"
-        f"{webhook_path.rstrip('/')}/{bot_token}"
-    )
 
 
 async def _start_mock_mode() -> None:
@@ -133,12 +112,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telegram Chat Backend", lifespan=lifespan)
 
+# CORS for the browser-facing API only (frontend origin). Webhook traffic is
+# server-to-server and does not use CORS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Candidate may tighten this
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+
+app.include_router(
+    build_webhook_router(
+        telegram=telegram,
+        chat=chat,
+        webhook_path=settings.telegram_webhook_path,
+    )
 )
 
 
@@ -181,29 +170,6 @@ async def post_message(payload: SendMessageRequest):
             status_code=409,
             detail="No active conversation for this chat_id — the participant must message the bot first",
         )
-
-
-@app.post(WEBHOOK_ROUTE)
-async def telegram_webhook(
-    bot_token: str,
-    request: Request,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None),
-):
-    """Inbound endpoint for Telegram webhook mode. Validates the bot token path
-    segment and optional shared secret, then funnels the update through the same
-    processing path as polling."""
-    if bot_token != settings.telegram_bot_token:
-        raise HTTPException(status_code=403, detail="Invalid bot token")
-    if (
-        settings.telegram_webhook_secret
-        and x_telegram_bot_api_secret_token != settings.telegram_webhook_secret
-    ):
-        raise HTTPException(status_code=403, detail="Invalid secret token")
-    incoming = telegram.process_update(await request.json())
-    if incoming is not None:
-        logger.info("Update via WEBHOOK (chat=%s)", incoming.chat_id)
-        await chat.handle_incoming(incoming)
-    return {"ok": True}
 
 
 @app.websocket("/ws")
