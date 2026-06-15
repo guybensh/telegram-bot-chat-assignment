@@ -19,7 +19,7 @@ class PollingListener(MessageListener):
     async def start(self, app_context: AppContext, bots: list[BotRecord]) -> None:
         if not bots:
             logger.warning(
-                "[PollingListener::start]: No bots registered — polling disabled"
+                "[start]: No bots registered — polling disabled"
             )
             return
 
@@ -33,7 +33,7 @@ class PollingListener(MessageListener):
             self._pollers.append(poller)
             await poller.start_polling()
             logger.info(
-                "[PollingListener::start]: Polling started for @%s (bot_id=%s)",
+                "[start]: Polling started for @%s (bot_id=%s)",
                 bot.username,
                 bot.bot_id,
             )

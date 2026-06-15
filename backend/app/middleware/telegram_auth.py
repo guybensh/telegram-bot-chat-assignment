@@ -48,14 +48,14 @@ def build_telegram_authentication(
             settings.telegram_webhook_path, bot_id
         ):
             logger.warning(
-                "[TelegramAuth::telegram_authentication]: Blocked webhook request with unexpected URL: %s",
+                "[telegram_authentication]: Blocked webhook request with unexpected URL: %s",
                 request.url,
             )
             raise HTTPException(status_code=403, detail="Forbidden")
 
         if not _matches_webhook_host(request, settings):
             logger.warning(
-                "[TelegramAuth::telegram_authentication]: Blocked webhook request with unexpected host: %s",
+                "[telegram_authentication]: Blocked webhook request with unexpected host: %s",
                 request.url,
             )
             raise HTTPException(status_code=403, detail="Forbidden")

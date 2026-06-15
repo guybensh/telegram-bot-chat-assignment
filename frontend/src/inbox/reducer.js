@@ -8,8 +8,7 @@ import { appendToThread, updateMessageStatus } from "./messages";
 import { normalizeMessage } from "./normalize";
 import { emptyInboxState } from "./state";
 import {
-  clearUnreadForBot,
-  clearUnreadForChat,
+  clearUnreadForThread,
 } from "./unread";
 import { applyWebSocketEvent } from "./websocket";
 
@@ -18,23 +17,28 @@ export const inboxReducer = (state, action) => {
     case "BOTS_LOADED":
       return { ...state, bots: action.bots };
 
-    case "CONVERSATIONS_LOADED":
+    case "CONVERSATIONS_LOADED": {
+      const existing = state.conversationsByBot[action.botUsername] || [];
       return {
         ...state,
-        conversations: mergeConversationLists(
-          state.conversations,
-          action.conversations
-        ),
+        conversationsByBot: {
+          ...state.conversationsByBot,
+          [action.botUsername]: mergeConversationLists(
+            existing,
+            action.conversations
+          ),
+        },
       };
-
-    case "CONVERSATIONS_CLEARED":
-      return { ...state, conversations: [] };
+    }
 
     case "MOCK_SYNC_BOT":
       return {
         ...state,
         bots: buildMockBots(),
-        conversations: mockConversationsForBot(action.botUsername),
+        conversationsByBot: {
+          ...state.conversationsByBot,
+          [action.botUsername]: mockConversationsForBot(action.botUsername),
+        },
       };
 
     case "SYNC_ACTIVE_CHATS":
@@ -51,7 +55,6 @@ export const inboxReducer = (state, action) => {
       const { threadKey: key, history } = action;
       const existing = state.messagesByThread[key] || [];
       const normalized = history.map(normalizeMessage);
-      // Keep WS messages that arrived before history finished loading.
       const merged =
         existing.length === 0
           ? normalized
@@ -81,24 +84,19 @@ export const inboxReducer = (state, action) => {
       return next;
     }
 
-    case "CLEAR_UNREAD_CHAT":
+    case "CLEAR_UNREAD_THREAD": {
+      const unread = clearUnreadForThread(
+        state.unreadByChatId,
+        state.unreadByBotUsername,
+        action.botUsername,
+        action.chatId
+      );
       return {
         ...state,
-        unreadByChatId: clearUnreadForChat(
-          state.unreadByChatId,
-          action.botUsername,
-          action.chatId
-        ),
+        unreadByChatId: unread.unreadByChatId,
+        unreadByBotUsername: unread.unreadByBotUsername,
       };
-
-    case "CLEAR_UNREAD_BOT":
-      return {
-        ...state,
-        unreadByBotUsername: clearUnreadForBot(
-          state.unreadByBotUsername,
-          action.botUsername
-        ),
-      };
+    }
 
     case "SEND_OPTIMISTIC": {
       const { optimistic, botUsername, chatId } = action;
@@ -110,11 +108,14 @@ export const inboxReducer = (state, action) => {
           key,
           optimistic
         ),
-        conversations: upsertConversationList(
-          state.conversations,
-          botUsername,
-          optimistic
-        ),
+        conversationsByBot: {
+          ...state.conversationsByBot,
+          [botUsername]: upsertConversationList(
+            state.conversationsByBot[botUsername] || [],
+            botUsername,
+            optimistic
+          ),
+        },
       };
     }
 
@@ -135,11 +136,14 @@ export const inboxReducer = (state, action) => {
       return {
         ...state,
         messagesByThread: appendToThread(state.messagesByThread, key, message),
-        conversations: upsertConversationList(
-          state.conversations,
-          botUsername,
-          message
-        ),
+        conversationsByBot: {
+          ...state.conversationsByBot,
+          [botUsername]: upsertConversationList(
+            state.conversationsByBot[botUsername] || [],
+            botUsername,
+            message
+          ),
+        },
       };
     }
 

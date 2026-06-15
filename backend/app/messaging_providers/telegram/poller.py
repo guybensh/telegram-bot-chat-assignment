@@ -47,7 +47,7 @@ class TelegramPoller:
 
     async def _poll_loop(self) -> None:
         logger.info(
-            "[TelegramPoller::_poll_loop]: Telegram polling started for bot_id=%s",
+            "[_poll_loop]: Telegram polling started for bot_id=%s",
             self._bot_id,
         )
         while True:
@@ -60,7 +60,7 @@ class TelegramPoller:
                     continue
                 if updates:
                     logger.info(
-                        "[TelegramPoller::_poll_loop]: Received %d update(s) via POLLING",
+                        "[_poll_loop]: Received %d update(s) via POLLING",
                         len(updates),
                     )
                 for update in updates:
@@ -68,7 +68,7 @@ class TelegramPoller:
                     incoming = self._provider.parse_incoming_message(update)
                     if incoming is not None:
                         logger.info(
-                            "[TelegramPoller::_poll_loop]: Update via POLLING (update_id=%s, chat=%s)",
+                            "[_poll_loop]: Update via POLLING (update_id=%s, chat=%s)",
                             update["update_id"],
                             incoming.chat_id,
                         )
@@ -77,18 +77,18 @@ class TelegramPoller:
                         )
             except asyncio.CancelledError:
                 logger.info(
-                    "[TelegramPoller::_poll_loop]: Telegram polling stopped"
+                    "[_poll_loop]: Telegram polling stopped"
                 )
                 raise
             except Exception:
                 logger.exception(
-                    "[TelegramPoller::_poll_loop]: Polling iteration failed; retrying shortly"
+                    "[_poll_loop]: Polling iteration failed; retrying shortly"
                 )
                 await asyncio.sleep(3)
 
     async def _mock_loop(self, interval_seconds: int) -> None:
         logger.info(
-            "[TelegramPoller::_mock_loop]: Mock feed started: a user message every %ss",
+            "[_mock_loop]: Mock feed started: a user message every %ss",
             interval_seconds,
         )
         counter = 0
@@ -106,9 +106,9 @@ class TelegramPoller:
                     ),
                 )
             except asyncio.CancelledError:
-                logger.info("[TelegramPoller::_mock_loop]: Mock feed stopped")
+                logger.info("[_mock_loop]: Mock feed stopped")
                 raise
             except Exception:
                 logger.exception(
-                    "[TelegramPoller::_mock_loop]: Mock feed iteration failed"
+                    "[_mock_loop]: Mock feed iteration failed"
                 )

@@ -40,7 +40,7 @@ class TelegramProvider(MessageProvider):
         resolved_id = str(bot["id"])
         if resolved_id != bot_id:
             logger.warning(
-                "[TelegramProvider::fetch_bot_profile]: bot_id mismatch — config=%s getMe=%s",
+                "[fetch_bot_profile]: bot_id mismatch — config=%s getMe=%s",
                 bot_id,
                 resolved_id,
             )
@@ -59,7 +59,7 @@ class TelegramProvider(MessageProvider):
             telegram_chat_id = int(chat_id)
         except ValueError:
             logger.warning(
-                "[TelegramProvider::send_message]: Invalid chat_id for Telegram: %r",
+                "[send_message]: Invalid chat_id for Telegram: %r",
                 chat_id,
             )
             return False

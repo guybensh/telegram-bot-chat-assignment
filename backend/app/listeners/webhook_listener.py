@@ -18,7 +18,7 @@ class WebhookListener(MessageListener):
     async def start(self, app_context: AppContext, bots: list[BotRecord]) -> None:
         if not bots:
             logger.warning(
-                "[WebhookListener::start]: No bots registered — webhook registration skipped"
+                "[start]: No bots registered — webhook registration skipped"
             )
             return
 
@@ -32,7 +32,7 @@ class WebhookListener(MessageListener):
             )
             ok = await self._provider.set_webhook(bot.bot_id, url, secret)
             logger.info(
-                "[WebhookListener::start]: Webhook set for @%s (bot_id=%s) -> %s (ok=%s)",
+                "[start]: Webhook set for @%s (bot_id=%s) -> %s (ok=%s)",
                 bot.username,
                 bot.bot_id,
                 url,

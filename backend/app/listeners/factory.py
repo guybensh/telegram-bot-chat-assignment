@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def create_listeners(app_context: AppContext) -> list[MessageListener]:
     """Pick incoming-message listeners from TELEGRAM_MODE in settings."""
     logger.info(
-        "[Factory::create_listeners]: register listeners",
+        "[create_listeners]: register listeners",
     )
     provider = app_context.message_provider
     if not isinstance(provider, TelegramProvider):

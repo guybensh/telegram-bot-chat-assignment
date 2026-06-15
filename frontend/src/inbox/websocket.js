@@ -4,13 +4,20 @@ import { appendToThread, updateMessageStatus } from "./messages";
 import { bumpUnread } from "./unread";
 import { emptyInboxState } from "./state";
 
+function upsertConversationsForBot(state, botUsername, event) {
+  const existing = state.conversationsByBot[botUsername] || [];
+  return {
+    ...state.conversationsByBot,
+    [botUsername]: upsertConversationList(existing, botUsername, event),
+  };
+}
+
 export function applyWebSocketEvent(state, event, { botUsername, chatId }) {
   switch (event.type) {
     case "message": {
       const msgBot = event.bot_username;
       if (!msgBot) return { state, reloadBots: true };
 
-      const isSelectedBot = botUsername === msgBot;
       const unread = bumpUnread(state, {
         msgBot,
         chatId: event.chat_id,
@@ -19,24 +26,13 @@ export function applyWebSocketEvent(state, event, { botUsername, chatId }) {
       });
 
       const key = threadKey(msgBot, event.chat_id);
-      let next = {
+      const next = {
         ...state,
         unreadByChatId: unread.unreadByChatId,
         unreadByBotUsername: unread.unreadByBotUsername,
         messagesByThread: appendToThread(state.messagesByThread, key, event),
+        conversationsByBot: upsertConversationsForBot(state, msgBot, event),
       };
-
-      // Update the visible conversation list when home or viewing this bot.
-      if (!botUsername || isSelectedBot) {
-        next = {
-          ...next,
-          conversations: upsertConversationList(
-            next.conversations,
-            msgBot,
-            event
-          ),
-        };
-      }
 
       return { state: next, reloadBots: true };
     }
