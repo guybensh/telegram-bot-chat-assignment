@@ -27,6 +27,12 @@ or domain orchestration code.
 - **Swappable implementations behind stable interfaces** — persistence is
   in-memory today but sits behind async repository interfaces; Telegram I/O sits
   behind `MessageProvider`, with receive mode chosen at startup (poll / webhook).
+- **Production first** — with polling, the server keeps a long-lived
+  `getUpdates` connection to Telegram for every bot; with webhooks, Telegram
+  pushes each update as a short inbound HTTP request and the server does not
+  hold that outbound connection. Polling remains available for local dev when a
+  public HTTPS URL isn't practical; both paths feed the same `ChatService` (see
+  [Telegram modes](#telegram-modes-telegram_mode)).
 - **Safe state, concurrency, and ordering** — shared repository state is guarded
   by locks; messages are ordered by timestamp and never reordered downstream.
 
@@ -255,6 +261,15 @@ and routing are already keyed by `chat_id`.
 |---|---|---|
 | `webhook` (default) | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
 | `poll` | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed (`.env.development`) |
+
+**Production first**
+
+- **Connections** — polling keeps one long-lived outbound connection per bot;
+  webhooks accept short inbound requests only when an update arrives.
+- **Push vs pull** — webhooks deliver updates as Telegram receives them; polling
+  repeatedly asks Telegram for new updates on that open connection.
+- **Poll when developing locally** — `getUpdates` works without registering a
+  public URL (no ngrok). Switch via `TELEGRAM_MODE=poll` in `.env.development`.
 
 All receive paths converge on `MessageProvider.parse_incoming_message` →
 `ChatService.handle_incoming_message`, so switching modes changes only how raw
