@@ -99,7 +99,7 @@ cp .env.development.example .env.development   # optional — local dev override
 
 Real shell environment variables override both files.
 
-**Backend variables** (see `.env.example`):
+**Environment variables** (see `.env.example`):
 
 | Variable | Description |
 |---|---|
@@ -111,12 +111,17 @@ Real shell environment variables override both files.
 | `TELEGRAM_WEBHOOK_SECRET` | Optional shared secret validated on inbound webhooks |
 | `CORS_ALLOWED_ORIGINS` | Allowed frontend origins (comma-separated) |
 
-**Per-bot config** — copy the template and add one JSON file per bot:
+**Bot config file** — copy the template and add the bots configuration properties:
 
 ```bash
-cp backend/app/config/bots/example.json.example backend/app/config/bots/my_bot.json
-# edit my_bot.json: set "token" and optional "max_active_chats"
+cp backend/app/config/bots.json.example backend/app/config/bots.json
 ```
+| Variable            | Description                                        |
+|---------------------|----------------------------------------------------|
+| `bot_id`            | bot identifier in the external provider (Telegram) |
+| `token`             | The (Telegram) bot token                           |
+| `max_active_chats` | optional number of chats the bot can handle        |
+
 
 **Frontend variables** (Vite — set inline or in `frontend/.env.local`):
 
@@ -137,17 +142,6 @@ pip install -r requirements.txt
 
 Run from `backend/` — the app loads `.env` from the repo root automatically.
 
-| Mode | Command | When to use |
-|---|---|---|
-| **Webhook** (default) | `uvicorn app.main:app --reload` | Production or local dev with a public HTTPS tunnel (ngrok) |
-| **Polling** | `ENVIRONMENT=development uvicorn app.main:app --reload` | Local dev — no public URL needed; uses `.env.development` |
-
-Webhook mode registers each bot to:
-
-```text
-{TELEGRAM_WEBHOOK_URL}{TELEGRAM_WEBHOOK_PATH}/{bot_token}
-```
-
 Health check: [http://localhost:8000/health](http://localhost:8000/health)
 
 ---
@@ -157,14 +151,8 @@ Health check: [http://localhost:8000/health](http://localhost:8000/health)
 ```bash
 cd frontend
 npm install
+npm run dev
 ```
-
-| Script | Command | When to use |
-|---|---|---|
-| **Dev** (real backend) | `npm run dev` | Default — talks to `http://localhost:8000` |
-| **Custom backend URL** | `VITE_API_URL=http://localhost:8000 npm run dev` | Point at a different backend host/port |
-| **Build** | `npm run build` | Production bundle |
-| **Preview build** | `npm run preview` | Serve the production build locally |
 
 App URL: [http://localhost:5173](http://localhost:5173)
 
