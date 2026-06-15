@@ -2,7 +2,6 @@ import logging
 
 from ..bootstrap import AppContext
 from ..messaging_providers.telegram import TelegramProvider
-from .mock_listener import MockListener
 from .polling_listener import PollingListener
 from .protocol import MessageListener
 from .webhook_listener import WebhookListener
@@ -23,6 +22,4 @@ def create_listeners(app_context: AppContext) -> list[MessageListener]:
         return [WebhookListener(provider)]
     if mode == "poll":
         return [PollingListener(provider)]
-    if mode == "mock":
-        return [MockListener(provider)]
     raise ValueError(f"Unknown TELEGRAM_MODE: {mode!r}")

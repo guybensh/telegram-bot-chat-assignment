@@ -46,15 +46,3 @@ class BotService:
             else self._settings.default_max_active_chats,
         )
         return await self._repository.create(record)
-
-    async def register_mock(self, *, max_chats: int | None = None) -> BotRecord:
-        return await self._repository.create(
-            BotRecord(
-                bot_id="99000001",
-                bot_name="Mock Bot",
-                username="mock_bot",
-                max_chats=max_chats
-                if max_chats is not None
-                else self._settings.default_max_active_chats,
-            )
-        )

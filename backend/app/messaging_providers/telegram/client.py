@@ -1,4 +1,3 @@
-import json
 import logging
 
 import httpx
@@ -9,9 +8,8 @@ logger = logging.getLogger(__name__)
 class TelegramClient:
     """Stateless Telegram Bot HTTP client — one shared transport, token per call."""
 
-    def __init__(self, api_base: str, *, mock: bool = False) -> None:
+    def __init__(self, api_base: str) -> None:
         self._api_base = api_base
-        self._mock = mock
         # Read timeout must exceed the long-poll timeout used in get_updates.
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(40.0))
 
@@ -23,8 +21,6 @@ class TelegramClient:
 
     async def get_me(self, token: str) -> dict | None:
         """Fetch bot profile metadata (name, username) via getMe."""
-        if self._mock:
-            return None
         try:
             resp = await self._http.get(self._url(token, "getMe"))
             data = resp.json()
@@ -35,11 +31,6 @@ class TelegramClient:
         return None
 
     async def send_message(self, token: str, chat_id: int, text: str) -> bool:
-        if self._mock:
-            logger.info(
-                "[send_message]: Mock mode: simulating successful Telegram delivery"
-            )
-            return True
         try:
             resp = await self._http.post(
                 self._url(token, "sendMessage"),

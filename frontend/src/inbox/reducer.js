@@ -1,9 +1,5 @@
 import { mergeConversationLists, upsertConversationList } from "./conversations";
 import { threadKey } from "./keys";
-import {
-  buildMockBots,
-  mockConversationsForBot,
-} from "./mock";
 import { appendToThread, updateMessageStatus } from "./messages";
 import { normalizeMessage } from "./normalize";
 import { emptyInboxState } from "./state";
@@ -28,16 +24,6 @@ export const inboxReducer = (state, action) => {
         },
       };
     }
-
-    case "MOCK_SYNC_BOT":
-      return {
-        ...state,
-        bots: buildMockBots(),
-        conversationsByBot: {
-          ...state.conversationsByBot,
-          [action.botUsername]: mockConversationsForBot(action.botUsername),
-        },
-      };
 
     case "SYNC_ACTIVE_CHATS":
       return {
@@ -126,23 +112,6 @@ export const inboxReducer = (state, action) => {
           action.status
         ),
       };
-
-    case "INCOMING_MESSAGE": {
-      const { message, botUsername, chatId } = action;
-      const key = threadKey(botUsername, chatId);
-      return {
-        ...state,
-        messagesByThread: appendToThread(state.messagesByThread, key, message),
-        conversationsByBot: {
-          ...state.conversationsByBot,
-          [botUsername]: upsertConversationList(
-            state.conversationsByBot[botUsername] || [],
-            botUsername,
-            message
-          ),
-        },
-      };
-    }
 
     case "RESET":
       return emptyInboxState();

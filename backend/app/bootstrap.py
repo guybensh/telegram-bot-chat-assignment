@@ -49,9 +49,6 @@ async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
     """Register every bot declared in the bots JSON file via the message provider."""
     logger.info("[load_bots_from_config]: Attempt loading")
 
-    if app_context.settings.telegram_mode == "mock":
-        return [await app_context.bot_service.register_mock()]
-
     provider = app_context.message_provider
     if not isinstance(provider, TelegramProvider):
         raise TypeError("load_bots_from_config requires TelegramProvider")

@@ -20,7 +20,7 @@ and the remote participant. This document describes what was built; see
 src/
   main.jsx                  React entry (StrictMode)
   App.jsx                   Router: /, /bots/:botUsername, /bots/:botUsername/chats/:chatId
-  config.js                 API_URL, WS_URL, USE_MOCK (from VITE_* env)
+  config.js                 API_URL, WS_URL (from VITE_* env)
   api/
     client.js               REST: fetchBots, fetchBotConversations, fetchHistory, sendMessage, resetChat
   hooks/
@@ -36,7 +36,6 @@ src/
     selectors.js            selectMessages, selectConversations, selectConversation
     keys.js                 threadKey(botUsername, chatId)
     normalize.js            Message / conversation normalization
-    mock.js                 Mock-mode fixtures (wraps __mocks__/seedMessages.js)
     prefetch.js             Loads conversation list + per-thread history for unread badges
   pages/
     InboxPage.jsx           Three-column shell: bots → conversations → chat
@@ -52,9 +51,6 @@ src/
   utils/
     time.js                 formatMessageTime, formatConversationTime
   index.css                 Styles
-
-frontend/__mocks__/
-  seedMessages.js           Sample bots / conversations / messages for mock mode
 ```
 
 Dependency direction is one-way:
@@ -103,16 +99,11 @@ to the no-chat state.
 
 - `VITE_API_URL` — backend base URL (default `http://localhost:8000`). The
   WebSocket URL is derived from it (`http→ws`, `https→wss`).
-- `VITE_USE_MOCK` — when `true`, the app runs with **no backend**: it seeds a
-  sample conversation and echoes replies locally. Run with `npm run dev:mock`.
-  Mock logic is isolated to a fixture file plus a couple of guarded branches, so
-  it imposes nothing on the real data path.
 
 ## Scripts
 
 ```bash
 npm run dev        # dev server against the real backend
-npm run dev:mock   # dev server with mock data, no backend needed
 npm run build      # production build
 ```
 
@@ -158,8 +149,7 @@ See the full comparison in [`backend.md`](./backend.md#unread-badges-prefetch-vs
 ### Prerequisites
 
 - Node.js 18+
-- A running backend (see [`backend.md`](./backend.md)), **or** use mock mode with
-  no backend at all
+- A running backend (see [`backend.md`](./backend.md))
 
 ### Install dependencies
 
@@ -175,7 +165,6 @@ Vite reads these at dev/build time. Set them inline or in `frontend/.env.local`:
 | Variable | Default | Description |
 |---|---|---|
 | `VITE_API_URL` | `http://localhost:8000` | Backend REST base URL; WebSocket URL is derived (`http` → `ws`) |
-| `VITE_USE_MOCK` | (unset / `false`) | Set to `true` to run with seeded sample data and no backend |
 
 `CORS_ALLOWED_ORIGINS` on the backend must include the Vite origin
 (`http://localhost:5173` by default).
@@ -185,7 +174,6 @@ Vite reads these at dev/build time. Set them inline or in `frontend/.env.local`:
 | Script | Command | When to use |
 |---|---|---|
 | **Dev** (real backend) | `npm run dev` | Default — talks to `http://localhost:8000` |
-| **Dev mock** (no backend) | `npm run dev:mock` | UI only; seeded bots, conversations, and messages |
 | **Custom backend URL** | `VITE_API_URL=http://localhost:8000 npm run dev` | Point at a different host/port |
 | **Production build** | `npm run build` | Output to `frontend/dist/` |
 | **Preview build** | `npm run preview` | Serve the production bundle locally |
@@ -204,15 +192,6 @@ cd frontend && npm run dev
 Navigate to a bot (`/bots/{username}`), pick a conversation, and send messages.
 The connection indicator shows WebSocket status; incoming Telegram messages
 arrive over `/ws`.
-
-**Without a backend** — useful for UI work only:
-
-```bash
-cd frontend && npm run dev:mock
-```
-
-Mock mode seeds multiple bots and conversations locally. Replies are echoed in
-the UI but nothing is sent to Telegram.
 
 ### Full stack (two terminals)
 

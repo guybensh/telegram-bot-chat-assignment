@@ -20,14 +20,13 @@ repositories and providers. Nothing in persistence or Telegram I/O imports route
 or domain orchestration code.
 
 - **Low coupling at the edges** — because responsibilities are separated,
-  listeners (poll / webhook / mock), the message provider, WebSocket broadcast,
+  listeners (poll / webhook), the message provider, WebSocket broadcast,
   and repositories do not call one another. `ChatService` coordinates them and
   is the single place that decides what happens to each message.
 - **Single responsibility** — each module is scoped to one job. Splitting the stack this way keeps changes localized.
 - **Swappable implementations behind stable interfaces** — persistence is
   in-memory today but sits behind async repository interfaces; Telegram I/O sits
-  behind `MessageProvider`, with receive mode chosen at startup (poll / webhook /
-  mock). Domain services depend on abstractions, not concrete implementations.
+  behind `MessageProvider`, with receive mode chosen at startup (poll / webhook).
 - **Safe state, concurrency, and ordering** — shared repository state is guarded
   by locks; messages are ordered by timestamp and never reordered downstream.
 
@@ -58,14 +57,13 @@ backend/app/
     protocol.py            MessageListener interface
     polling_listener.py    Poll mode — starts TelegramPoller per bot
     webhook_listener.py    Webhook mode — registers setWebhook on boot
-    mock_listener.py       Mock mode — simulated incoming feed
   messaging_providers/
     protocol.py            MessageProvider ABC
     types.py               IncomingMessage
     telegram/
       client.py            Stateless Telegram HTTP client
       provider.py          TelegramProvider (MessageProvider implementation)
-      poller.py            getUpdates long-poll loop (used by PollingListener / MockListener)
+      poller.py            getUpdates long-poll loop (used by PollingListener)
       utils.py             Webhook URL helpers
   middleware/
     cors.py                CORS registration
@@ -127,10 +125,10 @@ call the domain.
 - **`TelegramClient`** — stateless Telegram Bot HTTP client (`getMe`,
   `sendMessage`, `getUpdates`, `setWebhook`, `deleteWebhook`).
 - **`MessageListener` (protocol)** — startup hook for the receive path.
-  `PollingListener`, `WebhookListener`, and `MockListener` are selected by
+  `PollingListener` and `WebhookListener` are selected by
   `TELEGRAM_MODE` via `create_listeners()`.
-- **`TelegramPoller`** — background `getUpdates` long-poll loop (or mock feed);
-  used by `PollingListener` and `MockListener`.
+- **`TelegramPoller`** — background `getUpdates` long-poll loop;
+  used by `PollingListener`.
 - **`BotService` (domain)** — bot registry: register bots from config, resolve
   by id or username.
 - **`ChatService` (domain)** — the single place that decides message processing:
@@ -227,7 +225,7 @@ incoming user message in the inbox.
 
 ### Incoming (Telegram user → agent clients) — `ChatService.handle_incoming_message`
 
-1. A listener (`PollingListener` / `MockListener`) **or** the webhook route
+1. A listener (`PollingListener`) **or** the webhook route
    obtains a raw update, parses it via `MessageProvider.parse_incoming_message`,
    and passes the `IncomingMessage` to `handle_incoming_message`.
 2. Resolve the bot; ignore unknown `bot_id`.
@@ -256,7 +254,6 @@ and routing are already keyed by `chat_id`.
 |---|---|---|
 | `webhook` (default) | `POST /telegram/webhook`, registered via `setWebhook` on boot | Production — needs a public HTTPS URL |
 | `poll` | `getUpdates` long-poll loop; clears any stale webhook on boot | Local dev — no public URL needed (`.env.development`) |
-| `mock` | `MockListener` + `TelegramPoller` mock feed | Local testing with no live bot — outgoing sends are simulated, a fake user message arrives every 10s |
 
 All receive paths converge on `MessageProvider.parse_incoming_message` →
 `ChatService.handle_incoming_message`, so switching modes changes only how raw
@@ -286,7 +283,7 @@ backend/app/config/bots.json.example
 
 Variables (`.env`):
 - `DEFAULT_MAX_ACTIVE_CHATS` — default when a bot JSON omits `max_active_chats`.
-- `TELEGRAM_MODE` — `webhook` | `poll` | `mock`.
+- `TELEGRAM_MODE` — `webhook` | `poll`.
 - `TELEGRAM_API_BASE`, `TELEGRAM_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_PATH`, `TELEGRAM_WEBHOOK_SECRET`.
 - `CORS_ALLOWED_ORIGINS`.
 - `BOTS_CONFIG_PATH` — optional override for the bots credentials file (default:
@@ -381,7 +378,6 @@ Always run from `backend/` with the virtualenv active:
 | Mode | Command | When to use |
 |---|---|---|
 | **Polling** (recommended locally) | `ENVIRONMENT=development uvicorn app.main:app --reload` | No tunnel needed; uses `getUpdates` long-poll |
-| **Mock** | `TELEGRAM_MODE=mock uvicorn app.main:app --reload` | No live Telegram bot; fake user message every 10s |
 | **Webhook** | `uvicorn app.main:app --reload` | Needs `TELEGRAM_WEBHOOK_URL` pointing at a public HTTPS tunnel |
 
 Health check: [http://localhost:8000/health](http://localhost:8000/health)
