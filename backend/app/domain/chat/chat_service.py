@@ -57,7 +57,7 @@ class ChatService:
             reverse=True,
         )
 
-    async def count_active_chats(self, bot_id: int) -> int:
+    async def count_active_chats(self, bot_id: str) -> int:
         return len(await self._repository.active_chats(bot_id))
 
     async def get_history(self, username: str, chat_id: str) -> list[Message]:
@@ -117,7 +117,7 @@ class ChatService:
         return message
 
     async def handle_incoming(
-        self, bot_id: int, incoming: IncomingMessage
+        self, bot_id: str, incoming: IncomingMessage
     ) -> None:
         if not await self._connection_manager.has_clients():
             logger.info(

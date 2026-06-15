@@ -25,7 +25,7 @@ class BotsConfigFile(BaseModel):
 
 @dataclass(frozen=True)
 class BotConfigEntry:
-    bot_id: int
+    bot_id: str
     token: str
     max_active_chats: int
 
@@ -66,7 +66,7 @@ def _load_bot_config_entries(settings: Settings) -> tuple[BotConfigEntry, ...]:
             continue
         entries.append(
             BotConfigEntry(
-                bot_id=item.bot_id,
+                bot_id=str(item.bot_id),
                 token=item.token.strip(),
                 max_active_chats=item.max_active_chats
                 if item.max_active_chats is not None

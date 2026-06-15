@@ -22,7 +22,7 @@ class TelegramPoller:
         provider: "TelegramProvider",
         chat_service: ChatService,
         *,
-        bot_id: int,
+        bot_id: str,
     ) -> None:
         self._provider = provider
         self._chat_service = chat_service

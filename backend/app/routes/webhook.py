@@ -18,7 +18,7 @@ def webhook_router(app_context: AppContext) -> APIRouter:
     )
 
     @router.post("/{bot_id}")
-    async def telegram_webhook(request: Request, bot_id: int) -> dict[str, bool]:
+    async def telegram_webhook(request: Request, bot_id: str) -> dict[str, bool]:
         try:
             bot = await app_context.bot_service.get_by_id(bot_id)
         except BotNotFoundError:

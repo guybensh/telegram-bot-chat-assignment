@@ -9,12 +9,12 @@ class InMemoryChatRepository(ChatRepository):
 
     def __init__(self) -> None:
         # bot_id -> chat_id -> (message_id -> Message)
-        self._conversations: dict[int, dict[str, dict[str, Message]]] = {}
-        self._active: dict[int, set[str]] = {}
+        self._conversations: dict[str, dict[str, dict[str, Message]]] = {}
+        self._active: dict[str, set[str]] = {}
         self._lock = asyncio.Lock()
 
     async def register_chat(
-        self, bot_id: int, chat_id: str, max_chats: int
+        self, bot_id: str, chat_id: str, max_chats: int
     ) -> bool:
         async with self._lock:
             active = self._active.setdefault(bot_id, set())
@@ -26,16 +26,16 @@ class InMemoryChatRepository(ChatRepository):
             self._conversations.setdefault(bot_id, {}).setdefault(chat_id, {})
             return True
 
-    async def is_active_chat(self, bot_id: int, chat_id: str) -> bool:
+    async def is_active_chat(self, bot_id: str, chat_id: str) -> bool:
         async with self._lock:
             return chat_id in self._active.get(bot_id, set())
 
-    async def active_chats(self, bot_id: int) -> list[str]:
+    async def active_chats(self, bot_id: str) -> list[str]:
         async with self._lock:
             return sorted(self._active.get(bot_id, set()))
 
     async def add_message(
-        self, bot_id: int, chat_id: str, message: Message
+        self, bot_id: str, chat_id: str, message: Message
     ) -> Message | None:
         async with self._lock:
             if chat_id not in self._active.get(bot_id, set()):
@@ -46,7 +46,7 @@ class InMemoryChatRepository(ChatRepository):
             return message
 
     async def update_message_status(
-        self, bot_id: int, chat_id: str, message_id: str, status: Status
+        self, bot_id: str, chat_id: str, message_id: str, status: Status
     ) -> Message | None:
         async with self._lock:
             message = (
@@ -57,7 +57,7 @@ class InMemoryChatRepository(ChatRepository):
             message.status = status
             return message
 
-    async def get_conversation(self, bot_id: int, chat_id: str) -> list[Message]:
+    async def get_conversation(self, bot_id: str, chat_id: str) -> list[Message]:
         async with self._lock:
             messages = list(
                 self._conversations.get(bot_id, {}).get(chat_id, {}).values(),

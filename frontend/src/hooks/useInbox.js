@@ -17,7 +17,7 @@ import {
 function normalize(msg) {
   return {
     id: msg.id,
-    bot_id: msg.bot_id,
+    bot_id: String(msg.bot_id),
     chat_id: String(msg.chat_id),
     text: msg.text,
     timestamp: msg.timestamp,

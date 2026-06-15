@@ -4,7 +4,7 @@ from pydantic import BaseModel, computed_field
 class BotRecord(BaseModel):
     """Registered bot profile. Tokens are stored separately in the repository."""
 
-    bot_id: int
+    bot_id: str
     bot_name: str
     username: str
     max_chats: int
