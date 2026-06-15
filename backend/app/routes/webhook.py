@@ -36,7 +36,7 @@ def webhook_router(app_context: AppContext) -> APIRouter:
                 bot.username,
                 incoming.chat_id,
             )
-            await app_context.chat_service.handle_incoming(bot.bot_id, incoming)
+            await app_context.chat_service.handle_incoming_message(bot.bot_id, incoming)
         return {"ok": True}
 
     return router

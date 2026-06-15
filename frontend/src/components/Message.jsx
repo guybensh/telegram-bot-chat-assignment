@@ -2,6 +2,7 @@
 // incoming; everything from our side — "agent" (the human) and the reserved
 // "bot" (future automated replies) — is outgoing. Mapped to the existing CSS
 // classes; delivery ticks show only on our own messages.
+import { formatMessageTime } from "../utils/time";
 const STATUS_LABEL = {
   pending: "🕓",
   sent: "✓",
@@ -13,14 +14,6 @@ const SENDER_LABEL = {
   agent: "agent",
   bot: "bot",
 };
-
-function formatTime(timestamp) {
-  if (!timestamp) return "";
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export function Message({ message }) {
   const isOutgoing = message.sender !== "user";
@@ -34,7 +27,7 @@ export function Message({ message }) {
       <div className="chat-bubble">
         <div className="chat-text">{message.text}</div>
         <div className="chat-meta">
-          <span className="chat-timestamp">{formatTime(message.timestamp)}</span>
+          <span className="chat-timestamp">{formatMessageTime(message.timestamp)}</span>
           {isOutgoing && message.status && (
             <span className={`chat-status ${message.status}`}>
               {STATUS_LABEL[message.status] ?? ""}

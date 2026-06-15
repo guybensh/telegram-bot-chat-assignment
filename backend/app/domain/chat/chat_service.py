@@ -28,7 +28,7 @@ class ChatService:
     ) -> None:
         self._repository = repository
         self._connection_manager = connection_manager
-        self._messaging = messaging
+        self._messaging_provider = messaging
         self._bot_service = bot_service
 
     async def list_conversation_summaries(
@@ -36,7 +36,7 @@ class ChatService:
     ) -> list[ConversationSummary]:
         bot = await self._bot_service.get_by_username(username)
         summaries: list[ConversationSummary] = []
-        for chat_id in await self._repository.active_chats(bot.bot_id):
+        for chat_id in await self._repository.list_active_chats(bot.bot_id):
             messages = await self._repository.get_conversation(bot.bot_id, chat_id)
             last = messages[-1] if messages else None
             summaries.append(
@@ -58,15 +58,11 @@ class ChatService:
         )
 
     async def count_active_chats(self, bot_id: str) -> int:
-        return len(await self._repository.active_chats(bot_id))
+        return len(await self._repository.list_active_chats(bot_id))
 
     async def get_history(self, username: str, chat_id: str) -> list[Message]:
         bot = await self._bot_service.get_by_username(username)
         return await self._repository.get_conversation(bot.bot_id, chat_id)
-
-    async def reset(self) -> None:
-        await self._repository.reset()
-        await self._connection_manager.broadcast({"type": "reset"})
 
     async def send_message(
         self,
@@ -90,7 +86,7 @@ class ChatService:
         if stored is None:
             raise NoActiveConversationError(chat_id)
 
-        delivered = await self._messaging.send_message(bot.bot_id, chat_id, text)
+        delivered = await self._messaging_provider.send_message(bot.bot_id, chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
         await self._repository.update_message_status(
@@ -116,12 +112,12 @@ class ChatService:
         )
         return message
 
-    async def handle_incoming(
+    async def handle_incoming_message(
         self, bot_id: str, incoming: IncomingMessage
     ) -> None:
         if not await self._connection_manager.has_clients():
             logger.info(
-                "[ChatService::handle_incoming]: No agent connected; rejecting incoming from chat %s",
+                "[ChatService::handle_incoming_message]: No agent connected; rejecting incoming from chat %s",
                 incoming.chat_id,
             )
             return
@@ -130,7 +126,7 @@ class ChatService:
             bot = await self._bot_service.get_by_id(bot_id)
         except BotNotFoundError:
             logger.warning(
-                "[ChatService::handle_incoming]: Incoming for unknown bot_id %s; ignoring",
+                "[ChatService::handle_incoming_message]: Incoming for unknown bot_id %s; ignoring",
                 bot_id,
             )
             return
@@ -144,11 +140,11 @@ class ChatService:
             sender=Sender.USER,
             status=Status.RECEIVED,
         )
-        if not await self._repository.register_chat(
+        if not await self._repository.create(
             bot.bot_id, incoming.chat_id, bot.max_chats
         ):
             logger.info(
-                "[ChatService::handle_incoming]: At active-chat capacity for bot %s; ignoring chat %s",
+                "[ChatService::handle_incoming_message]: At active-chat capacity for bot %s; ignoring chat %s",
                 bot.username,
                 incoming.chat_id,
             )
@@ -160,7 +156,7 @@ class ChatService:
         if stored is None:
             return
         logger.info(
-            "[ChatService::handle_incoming]: Incoming [bot %s chat %s] %r",
+            "[ChatService::handle_incoming_message]: Incoming [bot %s chat %s] %r",
             bot.username,
             incoming.chat_id,
             incoming.text[:200],
@@ -172,3 +168,7 @@ class ChatService:
                 **message.model_dump(mode="json"),
             }
         )
+
+    async def reset(self) -> None:
+        await self._repository.delete()
+        await self._connection_manager.broadcast({"type": "reset"})

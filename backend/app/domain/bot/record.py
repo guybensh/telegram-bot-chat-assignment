@@ -2,11 +2,14 @@ from pydantic import BaseModel, computed_field
 
 
 class BotRecord(BaseModel):
-    """Registered bot profile. Tokens are stored separately in the repository."""
+    """Registered bot profile. Tokens are stored separately in the repository.
+
+    `username` is unique across all registered bots (enforced by the repository).
+    """
 
     bot_id: str
     bot_name: str
-    username: str
+    username: str  # unique — used in API paths (`/bots/{username}/...`)
     max_chats: int
 
     @computed_field  # type: ignore[prop-decorator]

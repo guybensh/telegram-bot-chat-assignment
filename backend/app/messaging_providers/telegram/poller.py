@@ -72,7 +72,7 @@ class TelegramPoller:
                             update["update_id"],
                             incoming.chat_id,
                         )
-                        await self._chat_service.handle_incoming(
+                        await self._chat_service.handle_incoming_message(
                             self._bot_id, incoming
                         )
             except asyncio.CancelledError:
@@ -96,7 +96,7 @@ class TelegramPoller:
             try:
                 await asyncio.sleep(interval_seconds)
                 counter += 1
-                await self._chat_service.handle_incoming(
+                await self._chat_service.handle_incoming_message(
                     self._bot_id,
                     IncomingMessage(
                         chat_id=_MOCK_CHAT_ID,

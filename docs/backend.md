@@ -249,6 +249,9 @@ TELEGRAM_MODE=mock uvicorn app.main:app --reload           # no bot (overrides m
 
 ## Trade-offs & assumptions
 
+- **Bot `username` is unique** — each registered bot has a distinct Telegram
+  `@username`; the repository indexes by it and API routes use
+  `/bots/{username}/...`, so duplicates are not supported.
 - **In-memory persistence** — state resets on restart, which the brief allows
   (session-scoped). The store's async interface is the swap point for a DB.
 - **Inline delivery** — `POST /messages` awaits Telegram and returns the final

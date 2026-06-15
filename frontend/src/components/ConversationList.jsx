@@ -1,16 +1,4 @@
-function formatTime(iso) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  const now = new Date();
-  const sameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate();
-  if (sameDay) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
+import { formatConversationTime } from "../utils/time";
 
 function previewText(conversation) {
   if (!conversation.last_message_text) {
@@ -58,7 +46,7 @@ export function ConversationList({
                     {conversation.title}
                   </span>
                   <span className="inbox-list-item-time">
-                    {formatTime(conversation.last_message_at)}
+                    {formatConversationTime(conversation.last_message_at)}
                   </span>
                 </div>
                 <div className="inbox-list-item-row">
