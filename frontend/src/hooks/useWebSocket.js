@@ -12,9 +12,6 @@ const MAX_BACKOFF_MS = 30000;
  * semantics — that lives in useInbox — so it can carry any future event type.
  *
  * Returns the connection status: "connecting" | "open" | "closed".
- *
- * When `enabled` is false (e.g. mock mode) it never opens a socket and simply
- * reports "open", so the rest of the app needs no special-casing.
  */
 export function useWebSocket(url, onMessage, enabled = true) {
   const [status, setStatus] = useState(enabled ? "connecting" : "open");

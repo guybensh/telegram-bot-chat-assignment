@@ -2,7 +2,6 @@
 
 A React (Vite) single-page app that renders the chat between the Telegram bot
 and the remote participant. This document describes what was built; see
-[`client.md`](./client.md) for the original planning rationale and
 [`integration.md`](./integration.md) for the cross-layer contract.
 
 ## Design goals
@@ -19,68 +18,52 @@ and the remote participant. This document describes what was built; see
 
 ```
 src/
-  config.js                 Backend URLs + feature flags (from VITE_* env)
+  main.jsx                  React entry (StrictMode)
+  App.jsx                   Router: /, /bots/:botUsername, /bots/:botUsername/chats/:chatId
+  config.js                 API_URL, WS_URL (from VITE_* env)
   api/
-    client.js               REST layer: fetchHistory(), sendMessage(id, text)
+    client.js               REST: fetchBots, fetchChatSummaries, fetchMessages, sendMessage, resetChat
   hooks/
-    useWebSocket.js         Generic, self-healing WebSocket (reconnect/backoff)
-    useChat.js              Chat state: history, optimistic send, receipts
+    useWebSocket.js         Generic self-healing WebSocket (reconnect / backoff)
+    useInbox.js             Thin orchestrator: useReducer, effects, send/reset, WS dispatch
+  inbox/                    Inbox state machine (reducer + helpers)
+    state.js                Initial state shape
+    reducer.js              Action handlers (BOTS_LOADED, WS_EVENT, SEND_OPTIMISTIC, …)
+    websocket.js            applyWebSocketEvent — maps server events to state updates
+    messages.js             Thread append + status updates
+    conversations.js        Conversation list merge / upsert
+    unread.js               Unread counts derived from message read_at
+    selectors.js            selectMessages, selectConversations, selectConversation
+    keys.js                 threadKey(botUsername, chatId)
+    normalize.js            Message / conversation normalization
+    prefetch.js             Loads conversation list + per-thread history for unread badges
+  pages/
+    InboxPage.jsx           Three-column shell: bots → conversations → chat
   components/
-    ChatHeader.jsx          Title + connection indicator
-    ConnectionStatus.jsx    Live "Connecting / Connected / Reconnecting" dot
-    MessageList.jsx         Scrollable list + auto-scroll + empty state
-    Message.jsx             A single bubble (side + delivery ticks)
-    MessageInput.jsx        Composer (Enter or button, ignores empty)
-  mocks/
-    seedMessages.js         Sample conversation for mock mode only
-  App.jsx                   Composition root (no logic)
+    BotList.jsx             Bot sidebar + unread badges
+    ConversationList.jsx    Conversation sidebar + unread badges
+    Chat.jsx                Thread panel (header, list, composer)
+    ChatHeader.jsx          Panel title
+    ConnectionStatus.jsx    Live socket status indicator
+    MessageList.jsx         Scrollable list + auto-scroll
+    Message.jsx             Single bubble (side + delivery ticks)
+    MessageInput.jsx        Composer (Enter or button)
+  utils/
+    time.js                 formatMessageTime, formatConversationTime
   index.css                 Styles
 ```
 
-The dependency direction is one-way: `App → components → (props)` and
-`App → useChat → { useWebSocket, api/client }`. Components are presentational
-and hold no network logic; all state lives in `useChat`.
+Dependency direction is one-way:
 
-## Roles & message model
-
-This app is a **back-office console**: a human **agent** holds a Telegram
-conversation with a remote **user**, with the bot as the conduit.
-
-Every message is the same shape:
-
-```js
-{
-  id:        "uuid",                       // client-gen for outgoing, server-gen for incoming
-  chat_id:   123456,                       // the Telegram conversation it belongs to
-  text:      "Hello",
-  timestamp: "2026-06-12T09:30:00.000Z",   // ISO 8601; set at send time, used for ordering
-  sender:    "user" | "agent" | "bot",
-  status:    "pending" | "sent" | "failed" // outgoing
-             | "received",                 // incoming (constant)
-}
+```
+App → InboxPage → components (props only)
+InboxPage → useInbox → { inboxReducer, api/client, useWebSocket }
+inboxReducer → { websocket, messages, conversations, unread, selectors, … }
 ```
 
-- **`sender`** — `user` = the remote Telegram human (incoming, left); `agent` =
-  us, the back-office human (outgoing, right); `bot` = a future automated reply
-  (reserved). Rendering: `sender !== "user"` is our side, so `agent` and `bot`
-  both render on the right.
-- **`chat_id`** — the conversation. The server owns it (it's the Telegram user's
-  chat); the client learns it and replies into it — it never invents one.
-- **`id`** — client-generated on send so the optimistic bubble, the server
-  record, and any receipt share one identity. Incoming messages bring their own.
-- **`status`** — drives the delivery indicator, shown only on our own messages.
-
-## Conversations & the "no chat yet" state
-
-A Telegram **bot cannot initiate** a conversation — it only learns a `chat_id`
-once the user messages it. So:
-
-- On mount the client calls `GET /conversations`; if one exists it loads its
-  history and sets the active `chatId`.
-- Otherwise `chatId` is `null` and the composer is **disabled** ("Waiting for a
-  user to start the chat…"). The client also learns the `chat_id` live from the
-  first incoming `message` event.
-- `canSend = chatId != null` gates the composer; sends include that `chat_id`.
+`InboxPage` owns navigation (react-router `useParams` / `useNavigate`). Components
+are presentational; network and state logic live in `useInbox` and the `inbox/`
+reducer modules.
 
 ## Data flow
 
@@ -88,32 +71,22 @@ once the user messages it. So:
 
 1. `useChat.send(text)` generates an `id` and appends an **optimistic** message
    (`sender:"agent"`, `status:"pending"`) — it shows instantly.
-2. `POST /messages` with the **full message object** (including `chat_id`). The
-   server stores it and echoes it back; the client adopts the status. On failure
+2. `POST /bots/{username}/chats/{chat_id}/messages` with `{ id, text, timestamp }`.
+   The server stores it and echoes it back; the client adopts the status. On failure
    (incl. a `409` for an inactive chat) the message flips to `"failed"`.
 3. A later WebSocket `receipt` event updates the same id to `sent`/`failed`.
 
 ### Incoming (Telegram user → agent)
 
-1. The server pushes `{ type: "message", chat_id, ... }` over the WebSocket.
-2. `useChat` appends it (and adopts `chat_id` if it didn't have one). Ordering is
-   the server's; the client never re-sorts.
+1. The server stores the message, then pushes `{ type: "message", bot_username, … }`
+   over the WebSocket when an agent client is connected.
+2. `useInbox` appends live events via the reducer. If the inbox was closed when
+   the message arrived, the agent sees it after selecting the bot/conversation
+   and loading history from REST. Ordering is the server's; the client never
+   re-sorts.
 
 A `{ type: "reset" }` event (from the admin Reset button) drops the client back
 to the no-chat state.
-
-## Backend contract
-
-| Channel | Endpoint | Payload |
-|---|---|---|
-| List conversations | `GET /conversations` | → `[{ chat_id }]` |
-| Load history | `GET /messages?chat_id=<id>` | → array of messages |
-| Send | `POST /messages` | `{ id, chat_id, text, timestamp }` → the stored message |
-| Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, chat_id, status}` / `{type:"reset"}` |
-| Reset | `POST /reset` | clears all conversations (dev) |
-
-The WebSocket is a general server-push channel — new event types are just
-another `case` in `useChat`'s handler, no transport changes.
 
 ## Connectivity & resilience
 
@@ -126,27 +99,108 @@ another `case` in `useChat`'s handler, no transport changes.
 
 - `VITE_API_URL` — backend base URL (default `http://localhost:8000`). The
   WebSocket URL is derived from it (`http→ws`, `https→wss`).
-- `VITE_USE_MOCK` — when `true`, the app runs with **no backend**: it seeds a
-  sample conversation and echoes replies locally. Run with `npm run dev:mock`.
-  Mock logic is isolated to a fixture file plus a couple of guarded branches, so
-  it imposes nothing on the real data path.
 
 ## Scripts
 
 ```bash
 npm run dev        # dev server against the real backend
-npm run dev:mock   # dev server with mock data, no backend needed
 npm run build      # production build
 ```
 
 ## Trade-offs & assumptions
 
-- **Session-scoped, no client persistence.** History is loaded on mount; the
-  brief allows the chat to show only the current session. A DB added
-  server-side would surface through the same `GET /messages` call.
-- **Single conversation.** The UI shows the one active conversation, matching
-  the backend's single-active-chat policy; there's no conversation switcher yet,
-  but messages are already tagged with `chat_id` so one could be added.
+- **Session-scoped, no client persistence.** History is loaded when a thread is
+  opened; the brief allows the chat to show only the current session. A DB added
+  server-side would surface through the same
+  `GET /bots/{username}/chats/{chat_id}/messages`
+  call.
+- **Bot cannot initiate a conversation ("no chat yet").** A Telegram bot only
+  learns a `chat_id` after the remote user messages it — the agent cannot pick
+  an arbitrary id and start chatting. The UI reflects this: send is enabled only
+  when a conversation is selected in the URL (`canSend = chatId != null`). Until
+  then the composer is disabled with *"Waiting for a user to start the chat…"*.
+  New threads appear when `GET /bots/{username}/chat-summaries` returns them
+  (e.g. after the user messaged while the inbox was closed) or when a live
+  WebSocket `message` arrives. There is no flow to message an unknown `chat_id`.
 - **Client-generated ids.** Chosen for race-free correlation across the
   optimistic bubble, REST response, and WebSocket receipt. The server treats the
   id as the storage key and is expected to reject duplicates.
+
+### Unread badges: prefetch vs server `unread_count`
+
+`read_at` on each message is the source of truth for read state (server-persisted;
+the client calls `POST .../messages/read` when a thread is opened). Badge
+numbers are derived client-side today: count user messages with `read_at == null`
+in `messagesByThread`.
+
+Because conversation summaries do not include `read_at`, the client **prefetches
+full history** for every active thread when bots/chat-summaries load
+(`inbox/prefetch.js`). Capacity labels (`active_chats` / `max_chats`) already
+come from `GET /bots` and do not depend on prefetch.
+
+See the full comparison in [`backend.md`](./backend.md#unread-badges-prefetch-vs-server-unread_count).
+
+| Approach | Pros | Cons |
+|---|---|---|
+| **Prefetch (today)** | No extra API fields; reuses `GET /bots/{username}/chat-summaries` and `GET /bots/{username}/chats/{chat_id}/messages`; stays in sync with `read_at` | `1 + N` requests and full message payloads on inbox open |
+| **Server `unread_count` (planned)** | List endpoints return counts; badges work immediately; load only the open thread | Server must compute or maintain counts on store/read |
+
+## Working locally
+
+### Prerequisites
+
+- Node.js 18+
+- A running backend (see [`backend.md`](./backend.md))
+
+### Install dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### Environment variables
+
+Vite reads these at dev/build time. Set them inline or in `frontend/.env.local`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_API_URL` | `http://localhost:8000` | Backend REST base URL; WebSocket URL is derived (`http` → `ws`) |
+
+`CORS_ALLOWED_ORIGINS` on the backend must include the Vite origin
+(`http://localhost:5173` by default).
+
+### Run the dev server
+
+| Script | Command | When to use |
+|---|---|---|
+| **Dev** (real backend) | `npm run dev` | Default — talks to `http://localhost:8000` |
+| **Custom backend URL** | `VITE_API_URL=http://localhost:8000 npm run dev` | Point at a different host/port |
+| **Production build** | `npm run build` | Output to `frontend/dist/` |
+| **Preview build** | `npm run preview` | Serve the production bundle locally |
+
+App URL: [http://localhost:5173](http://localhost:5173)
+
+### Typical local workflow
+
+**With a live backend** — start the backend first (polling mode is easiest; see
+backend docs), then:
+
+```bash
+cd frontend && npm run dev
+```
+
+Navigate to a bot (`/bots/{username}`), pick a conversation, and send messages.
+The connection indicator shows WebSocket status; incoming Telegram messages
+arrive over `/ws`.
+
+### Full stack (two terminals)
+
+```bash
+# Terminal 1 — backend (polling)
+cd backend && source venv/bin/activate
+ENVIRONMENT=development uvicorn app.main:app --reload
+
+# Terminal 2 — frontend
+cd frontend && npm run dev
+```

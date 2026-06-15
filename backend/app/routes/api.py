@@ -4,7 +4,13 @@ from ..domain.bot import BotNotFoundError
 from ..domain.bot.record import BotInboxItem
 from ..domain.chat import NoActiveConversationError
 from ..bootstrap import AppContext
-from ..models import ConversationSummary, Message, SendMessageRequest
+from ..models import (
+    ChatSummary,
+    MarkThreadReadRequest,
+    MarkThreadReadResponse,
+    Message,
+    SendMessageRequest,
+)
 
 router = APIRouter()
 
@@ -37,29 +43,58 @@ def app_router(deps: AppContext) -> APIRouter:
         return items
 
     @router.get(
-        "/bots/{username}/conversations",
-        response_model=list[ConversationSummary],
+        "/bots/{username}/chat-summaries",
+        response_model=list[ChatSummary],
     )
-    async def get_bot_conversations(username: str):
+    async def get_chat_summaries(username: str):
         try:
-            return await deps.chat_service.list_conversation_summaries(username)
+            return await deps.chat_service.list_chat_summaries(username)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
-    @router.get("/bots/{username}/messages", response_model=list[Message])
+    @router.get(
+        "/bots/{username}/chats/{chat_id}/messages",
+        response_model=list[Message],
+    )
     async def get_messages(username: str, chat_id: str):
         try:
-            return await deps.chat_service.get_history(username, chat_id)
+            return await deps.chat_service.list_messages(username, chat_id)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
-    @router.post("/bots/{username}/messages", response_model=Message)
-    async def post_message(username: str, payload: SendMessageRequest):
+    @router.post(
+        "/bots/{username}/chats/{chat_id}/messages/read",
+        response_model=MarkThreadReadResponse,
+    )
+    async def mark_message_read(
+        username: str, chat_id: str, payload: MarkThreadReadRequest
+    ):
+        try:
+            marked_count = await deps.chat_service.mark_message_read(
+                username, chat_id, payload.read_at
+            )
+        except BotNotFoundError:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        except NoActiveConversationError:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return MarkThreadReadResponse(
+            chat_id=chat_id,
+            read_at=payload.read_at,
+            marked_count=marked_count,
+        )
+
+    @router.post(
+        "/bots/{username}/chats/{chat_id}/messages",
+        response_model=Message,
+    )
+    async def post_message(
+        username: str, chat_id: str, payload: SendMessageRequest
+    ):
         try:
             return await deps.chat_service.send_message(
                 username,
                 payload.id,
-                payload.chat_id,
+                chat_id,
                 payload.text,
                 payload.timestamp,
             )

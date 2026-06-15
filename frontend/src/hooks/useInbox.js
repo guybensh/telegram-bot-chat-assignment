@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useReducer } from "react";
-import { USE_MOCK, WS_URL } from "../config";
+import { WS_URL } from "../config";
 import {
-  fetchBotConversations,
   fetchBots,
-  fetchHistory,
+  fetchMessages,
+  markMessagesRead,
   resetChat,
   sendMessage,
 } from "../api/client";
 import { threadKey } from "../inbox/keys";
-import { buildMockBots } from "../inbox/mock";
+import { prefetchBotThreadHistories } from "../inbox/prefetch";
 import {
   inboxReducer,
   shouldReloadBotsAfterWsEvent,
 } from "../inbox/reducer";
 import { selectConversation, selectConversations, selectMessages } from "../inbox/selectors";
+import {
+  selectUnreadByBotUsername,
+  selectUnreadByChatId,
+} from "../inbox/unread";
 import { createInitialInboxState } from "../inbox/state";
 import { useWebSocket } from "./useWebSocket";
 
@@ -26,24 +30,39 @@ import { useWebSocket } from "./useWebSocket";
 export function useInbox(botUsername, chatId) {
   const [state, dispatch] = useReducer(
     inboxReducer,
-    botUsername,
+    undefined,
     createInitialInboxState
   );
 
   const loadBots = useCallback(() => {
-    if (USE_MOCK) {
-      dispatch({ type: "BOTS_LOADED", bots: buildMockBots() });
-      return undefined;
-    }
     let cancelled = false;
     fetchBots()
       .then((list) => {
-        if (!cancelled) dispatch({ type: "BOTS_LOADED", bots: list });
+        if (cancelled) return;
+        dispatch({ type: "BOTS_LOADED", bots: list });
+        list.forEach((bot) => {
+          prefetchBotThreadHistories(bot.username, dispatch).catch((err) =>
+            console.error(`Could not prefetch threads for @${bot.username}`, err)
+          );
+        });
       })
       .catch((err) => console.error("Could not load bots", err));
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  const markThreadRead = useCallback((targetBotUsername, targetChatId) => {
+    const readAt = new Date().toISOString();
+    dispatch({
+      type: "MARK_THREAD_READ",
+      botUsername: targetBotUsername,
+      chatId: targetChatId,
+      readAt,
+    });
+    markMessagesRead(targetBotUsername, targetChatId, readAt).catch((err) =>
+      console.error("Mark read failed", err)
+    );
   }, []);
 
   const handleEvent = useCallback(
@@ -56,20 +75,20 @@ export function useInbox(botUsername, chatId) {
       if (shouldReloadBotsAfterWsEvent(event)) {
         loadBots();
       }
+      if (
+        event.type === "message" &&
+        event.bot_username === botUsername &&
+        String(event.chat_id) === String(chatId)
+      ) {
+        markThreadRead(botUsername, chatId);
+      }
     },
-    [botUsername, chatId, loadBots]
+    [botUsername, chatId, loadBots, markThreadRead]
   );
 
-  const connectionStatus = useWebSocket(WS_URL, handleEvent, !USE_MOCK);
+  const connectionStatus = useWebSocket(WS_URL, handleEvent);
 
   useEffect(() => loadBots(), [loadBots]);
-
-  useEffect(() => {
-    if (!botUsername) return;
-    if (USE_MOCK) {
-      dispatch({ type: "MOCK_SYNC_BOT", botUsername });
-    }
-  }, [botUsername]);
 
   useEffect(() => {
     if (!botUsername) return;
@@ -81,30 +100,18 @@ export function useInbox(botUsername, chatId) {
   }, [botUsername, state.conversationsByBot]);
 
   useEffect(() => {
-    if (!botUsername || USE_MOCK) return undefined;
-    let cancelled = false;
-    fetchBotConversations(botUsername)
-      .then((list) => {
-        if (!cancelled) {
-          dispatch({
-            type: "CONVERSATIONS_LOADED",
-            botUsername,
-            conversations: list,
-          });
-        }
-      })
-      .catch((err) => console.error("Could not load conversations", err));
-    return () => {
-      cancelled = true;
-    };
+    if (!botUsername) return;
+    prefetchBotThreadHistories(botUsername, dispatch).catch((err) =>
+      console.error("Could not load conversations", err)
+    );
   }, [botUsername]);
 
   useEffect(() => {
-    if (!botUsername || !chatId || USE_MOCK) return undefined;
-    const key = threadKey(botUsername, chatId);
+    if (!botUsername || !chatId) return undefined;
 
+    const key = threadKey(botUsername, chatId);
     let cancelled = false;
-    fetchHistory(botUsername, chatId)
+    fetchMessages(botUsername, chatId)
       .then((history) => {
         if (cancelled) return;
         dispatch({
@@ -112,17 +119,15 @@ export function useInbox(botUsername, chatId) {
           threadKey: key,
           history,
         });
+        if (history.length) {
+          markThreadRead(botUsername, chatId);
+        }
       })
       .catch((err) => console.error("Could not load history", err));
     return () => {
       cancelled = true;
     };
-  }, [botUsername, chatId]);
-
-  useEffect(() => {
-    if (!botUsername || chatId == null) return;
-    dispatch({ type: "CLEAR_UNREAD_THREAD", botUsername, chatId });
-  }, [botUsername, chatId]);
+  }, [botUsername, chatId, markThreadRead]);
 
   const send = useCallback(
     async (text) => {
@@ -141,38 +146,12 @@ export function useInbox(botUsername, chatId) {
 
       dispatch({ type: "SEND_OPTIMISTIC", optimistic, botUsername, chatId });
 
-      if (USE_MOCK) {
-        setTimeout(
-          () =>
-            dispatch({
-              type: "MESSAGE_STATUS",
-              threadKey: key,
-              messageId: id,
-              status: "sent",
-            }),
-          300
-        );
-        setTimeout(() => {
-          dispatch({
-            type: "INCOMING_MESSAGE",
-            botUsername,
-            chatId,
-            message: {
-              id: crypto.randomUUID(),
-              bot_id: optimistic.bot_id,
-              chat_id: chatId,
-              text: `Echo: ${text}`,
-              timestamp: new Date().toISOString(),
-              sender: "user",
-              status: "received",
-            },
-          });
-        }, 1200);
-        return;
-      }
-
       try {
-        const saved = await sendMessage(botUsername, optimistic);
+        const saved = await sendMessage(botUsername, chatId, {
+          id,
+          text,
+          timestamp: optimistic.timestamp,
+        });
         if (saved?.status) {
           dispatch({
             type: "MESSAGE_STATUS",
@@ -195,12 +174,10 @@ export function useInbox(botUsername, chatId) {
   );
 
   const reset = useCallback(async () => {
-    if (!USE_MOCK) {
-      try {
-        await resetChat();
-      } catch (err) {
-        console.error("Reset failed", err);
-      }
+    try {
+      await resetChat();
+    } catch (err) {
+      console.error("Reset failed", err);
     }
     dispatch({ type: "RESET" });
     loadBots();
@@ -215,7 +192,7 @@ export function useInbox(botUsername, chatId) {
     send,
     canSend: chatId != null,
     reset,
-    unreadByChatId: state.unreadByChatId,
-    unreadByBotUsername: state.unreadByBotUsername,
+    unreadByChatId: selectUnreadByChatId(state),
+    unreadByBotUsername: selectUnreadByBotUsername(state),
   };
 }

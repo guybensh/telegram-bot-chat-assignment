@@ -104,7 +104,7 @@ Real shell environment variables override both files.
 | Variable | Description |
 |---|---|
 | `DEFAULT_MAX_ACTIVE_CHATS` | Default max conversations per bot when omitted from its JSON file |
-| `TELEGRAM_MODE` | `webhook` \| `poll` \| `mock` |
+| `TELEGRAM_MODE` | `webhook` \| `poll` |
 | `TELEGRAM_API_BASE` | Telegram API base URL (default `https://api.telegram.org`) |
 | `TELEGRAM_WEBHOOK_URL` | Public HTTPS base for webhook mode (e.g. ngrok URL) |
 | `TELEGRAM_WEBHOOK_PATH` | Webhook route prefix (default `/telegram/webhook`; bot token is appended) |
@@ -123,7 +123,6 @@ cp backend/app/config/bots/example.json.example backend/app/config/bots/my_bot.j
 | Variable | Description |
 |---|---|
 | `VITE_API_URL` | Backend base URL (default `http://localhost:8000`) |
-| `VITE_USE_MOCK` | Set to `true` to run the UI with no backend (mock data) |
 
 ---
 
@@ -142,7 +141,6 @@ Run from `backend/` — the app loads `.env` from the repo root automatically.
 |---|---|---|
 | **Webhook** (default) | `uvicorn app.main:app --reload` | Production or local dev with a public HTTPS tunnel (ngrok) |
 | **Polling** | `ENVIRONMENT=development uvicorn app.main:app --reload` | Local dev — no public URL needed; uses `.env.development` |
-| **Mock** | `TELEGRAM_MODE=mock uvicorn app.main:app --reload` | Backend runs with no live Telegram bot |
 
 Webhook mode registers each bot to:
 
@@ -164,7 +162,6 @@ npm install
 | Script | Command | When to use |
 |---|---|---|
 | **Dev** (real backend) | `npm run dev` | Default — talks to `http://localhost:8000` |
-| **Dev mock** (no backend) | `npm run dev:mock` | UI only, seeded sample messages |
 | **Custom backend URL** | `VITE_API_URL=http://localhost:8000 npm run dev` | Point at a different backend host/port |
 | **Build** | `npm run build` | Production bundle |
 | **Preview build** | `npm run preview` | Serve the production build locally |
@@ -184,12 +181,6 @@ ENVIRONMENT=development uvicorn app.main:app --reload
 
 # Terminal 2 — frontend
 cd frontend && npm run dev
-```
-
-Or run the frontend alone with mock data (no backend or bot needed):
-
-```bash
-cd frontend && npm run dev:mock
 ```
 
 ---

@@ -7,6 +7,7 @@ export function normalizeMessage(msg) {
     timestamp: msg.timestamp,
     sender: msg.sender,
     status: msg.status,
+    read_at: msg.read_at ?? null,
   };
 }
 

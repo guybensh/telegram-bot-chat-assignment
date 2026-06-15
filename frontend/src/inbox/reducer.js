@@ -1,15 +1,9 @@
 import { mergeConversationLists, upsertConversationList } from "./conversations";
 import { threadKey } from "./keys";
-import {
-  buildMockBots,
-  mockConversationsForBot,
-} from "./mock";
 import { appendToThread, updateMessageStatus } from "./messages";
 import { normalizeMessage } from "./normalize";
 import { emptyInboxState } from "./state";
-import {
-  clearUnreadForThread,
-} from "./unread";
+import { markThreadReadInMessages } from "./unread";
 import { applyWebSocketEvent } from "./websocket";
 
 export const inboxReducer = (state, action) => {
@@ -30,16 +24,6 @@ export const inboxReducer = (state, action) => {
         },
       };
     }
-
-    case "MOCK_SYNC_BOT":
-      return {
-        ...state,
-        bots: buildMockBots(),
-        conversationsByBot: {
-          ...state.conversationsByBot,
-          [action.botUsername]: mockConversationsForBot(action.botUsername),
-        },
-      };
 
     case "SYNC_ACTIVE_CHATS":
       return {
@@ -84,17 +68,16 @@ export const inboxReducer = (state, action) => {
       return next;
     }
 
-    case "CLEAR_UNREAD_THREAD": {
-      const unread = clearUnreadForThread(
-        state.unreadByChatId,
-        state.unreadByBotUsername,
-        action.botUsername,
-        action.chatId
-      );
+    case "MARK_THREAD_READ": {
+      const { botUsername, chatId, readAt } = action;
       return {
         ...state,
-        unreadByChatId: unread.unreadByChatId,
-        unreadByBotUsername: unread.unreadByBotUsername,
+        messagesByThread: markThreadReadInMessages(
+          state.messagesByThread,
+          botUsername,
+          chatId,
+          readAt
+        ),
       };
     }
 
@@ -129,23 +112,6 @@ export const inboxReducer = (state, action) => {
           action.status
         ),
       };
-
-    case "INCOMING_MESSAGE": {
-      const { message, botUsername, chatId } = action;
-      const key = threadKey(botUsername, chatId);
-      return {
-        ...state,
-        messagesByThread: appendToThread(state.messagesByThread, key, message),
-        conversationsByBot: {
-          ...state.conversationsByBot,
-          [botUsername]: upsertConversationList(
-            state.conversationsByBot[botUsername] || [],
-            botUsername,
-            message
-          ),
-        },
-      };
-    }
 
     case "RESET":
       return emptyInboxState();

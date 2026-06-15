@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Message } from "./Message";
 
-const keyOf = (m) => m.id;
-
 export function MessageList({ messages }) {
   const containerRef = useRef(null);
 
@@ -19,7 +17,7 @@ export function MessageList({ messages }) {
         <p className="chat-empty">No messages in this conversation yet.</p>
       )}
       {messages.map((message) => (
-        <Message key={keyOf(message)} message={message} />
+        <Message key={message.id} message={message} />
       ))}
     </div>
   );

@@ -41,10 +41,11 @@ class Message(BaseModel):
     timestamp: datetime
     sender: Sender
     status: Status
+    read_at: datetime | None = None
 
 
-class ConversationSummary(BaseModel):
-    """Lightweight row for the inbox conversation list."""
+class ChatSummary(BaseModel):
+    """Lightweight row for the inbox chat list."""
 
     chat_id: str
     bot_id: str
@@ -55,12 +56,23 @@ class ConversationSummary(BaseModel):
     last_sender: Sender | None = None
 
 
+class MarkThreadReadRequest(BaseModel):
+    """Body of POST /bots/{username}/chats/{chat_id}/messages/read."""
+
+    read_at: datetime
+
+
+class MarkThreadReadResponse(BaseModel):
+    chat_id: str
+    read_at: datetime
+    marked_count: int
+
+
 class SendMessageRequest(BaseModel):
-    """Body of POST /messages. The client states which conversation (`chat_id`)
-    it is replying to and supplies id/text/timestamp; `sender`/`status` are
-    assigned server-side. Unknown fields are ignored."""
+    """Body of POST /bots/{username}/chats/{chat_id}/messages. The client supplies
+    id/text/timestamp; `chat_id` comes from the route. `sender`/`status` are
+    assigned server-side."""
 
     id: str
-    chat_id: str
     text: str
     timestamp: datetime

@@ -8,24 +8,15 @@ from .client import TelegramClient
 
 logger = logging.getLogger(__name__)
 
-_MOCK_BOT_ID = "99000001"
-_MOCK_TOKEN = "mock-token"
-
 
 class TelegramProvider(MessageProvider):
     """Telegram implementation of MessageProvider — holds bot credentials."""
 
     def __init__(self, settings: Settings) -> None:
-        self._mock = settings.telegram_mode == "mock"
-        self._client = TelegramClient(
-            settings.telegram_api_base, mock=self._mock
-        )
-        self._tokens: dict[str, str] = {}
-        if self._mock:
-            self._tokens[_MOCK_BOT_ID] = _MOCK_TOKEN
-        else:
-            for entry in get_bot_config_entries():
-                self._tokens[entry.bot_id] = entry.token
+        self._client = TelegramClient(settings.telegram_api_base)
+        self._tokens: dict[str, str] = {
+            entry.bot_id: entry.token for entry in get_bot_config_entries()
+        }
 
     def has_bot(self, bot_id: str) -> bool:
         return bot_id in self._tokens

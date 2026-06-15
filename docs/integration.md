@@ -1,57 +1,75 @@
-# Integration — planning
+# Integration — cross-layer contract
 
-## What it is
+How the React inbox, FastAPI backend, and Telegram connect. Flows and wire
+protocols only — see [`backend.md`](./backend.md) and [`frontend.md`](./frontend.md)
+for tier-specific detail.
 
-How the client, server, and Telegram connect end-to-end. This document covers the two message flows, the contract between layers, and the protocol decisions that tie them together.
+## Actors
 
-## Outgoing flow — user sends a message
+| Actor | Role |
+|---|---|
+| **Agent client** (React) | Inbox UI — lists bots/chats, sends replies, receives push events |
+| **Backend** (FastAPI) | Domain logic, persistence, bridges Telegram ↔ agent |
+| **Telegram** | External provider — delivers user messages in; carries bot replies out |
 
-```
-Client → POST /messages → FastAPI → outgoing queue → bot worker → Telegram API → remote participant
-```
+All agent-facing traffic is scoped by **bot** (`username`) and **chat** (`chat_id`).
 
-1. User hits send in the UI
-2. Client fires `POST /messages` with `{text, session_id}`
-3. FastAPI validates, writes to DB with status `pending`, enqueues the job, returns `201`
-4. Bot worker dequeues, calls Telegram `sendMessage`, updates DB status to `sent`
-5. Server pushes a receipt event to the client over WebSocket: `{type: "receipt", message_id, status: "sent"}`
-6. UI updates the message indicator (e.g. ✓)
+## Protocol decisions
 
-Error path: if the bot worker fails after N retries, it updates status to `failed` and pushes `{type: "receipt", status: "failed"}` so the UI can surface a retry option.
-
-## Incoming flow — remote participant sends a message
-
-```
-Remote participant → Telegram API → webhook → FastAPI → incoming queue → dispatcher → WebSocket → client
-```
-
-1. Remote participant sends a message in Telegram
-2. Telegram calls the registered webhook endpoint
-3. FastAPI validates the Telegram token, writes the message to DB, enqueues it
-4. Dispatcher resolves `telegram_chat_id → user_id → WebSocket`
-5. Pushes `{type: "message", text, timestamp, direction: "in"}` to the client
-6. UI appends the message to the chat
-
-## Protocol split — why
-
-| Direction | Protocol | Reason |
+| Path | Protocol | Why |
 |---|---|---|
-| User → server | REST POST | Client-initiated, needs explicit confirmation, trivial error handling |
-| Server → client | WebSocket | Server-initiated, async, single persistent channel for all push events |
+| Agent → backend | **REST** | Client-initiated; explicit HTTP status (e.g. `409` when chat is not active) |
+| Backend → agent | **WebSocket** (`/ws`) | Server-initiated push — new messages, send receipts, reset |
+| Backend → Telegram (out) | **HTTPS** (`sendMessage`) | Inline on send — POST awaits delivery, no async worker queue |
+| Telegram → backend (in) | **Webhook** (default) or **long poll** (`getUpdates`) | Webhook: Telegram pushes a short HTTP POST per update. Poll: one long-lived outbound connection per bot. Both converge on the same handler |
 
-The WebSocket is a general server-push channel, not just for chat messages. Receipts and future events (typing indicators, errors) all travel the same pipe as new event types — no transport changes needed.
+**Store-first incoming** — user messages are always persisted before any WebSocket
+broadcast. If no agent is connected, the client loads them later over REST.
 
-## Local development vs production
+**Single message shape** — the same `Message` fields in REST responses and
+WebSocket payloads (below).
 
-| Concern | Local | Production |
-|---|---|---|
-| Telegram updates | Long polling | Webhook (HTTPS required) |
-| Queue | In-memory / asyncio.Queue | Redis |
-| Database | SQLite | Postgres |
-| Multiple instances | Single process | Shared Redis for WS map + queues |
+## Outgoing flow — agent → Telegram user
 
-## Key decisions to document
+```
+Agent UI ──POST …/messages──► Backend ──sendMessage──► Telegram ──► remote user
+                │                                      │
+                ◄── Message (final status) ────────────┘
+                │
+Backend ──receipt on /ws──► Agent UI (and any other connected clients)
+```
 
-- Webhook URL must be registered with Telegram via `setWebhook` — this requires a public HTTPS endpoint (use ngrok locally)
-- Bot tokens live in `backend/app/config/bots/*.json` on the server and are never exposed to the client
-- Message IDs are generated server-side so receipts can be correlated correctly across the WebSocket and REST response
+1. Client shows an optimistic message (`sender: "agent"`, `status: "pending"`).
+2. `POST /bots/{username}/chats/{chat_id}/messages`.
+3. Backend rejects with `409` if the chat is not active (user must message the bot first).
+4. Backend stores, calls Telegram `sendMessage`, sets `sent` or `failed`, returns `Message`.
+5. Backend broadcasts `{ type: "receipt", … }`.
+
+## Incoming flow — Telegram user → agent
+
+```
+Remote user ──► Telegram ──► Backend ──store──► (if agent connected) ──/ws──► Agent UI
+                    ▲              │
+                    │              └── webhook POST  or  getUpdates poll
+                    └── sendMessage (outgoing path above)
+```
+
+1. User messages the bot in Telegram.
+2. Update arrives via **webhook** (`POST /telegram/webhook/{bot_id}`) or **poll**
+   (`getUpdates` loop) — parsed by `MessageProvider`, handled by `ChatService`.
+3. Backend admits the chat (capacity limit), stores
+   `{ sender: "user", status: "received", read_at: null }`.
+4. If an agent client is connected — `{ type: "message", … }` on `/ws`.
+   Otherwise the message waits for REST load.
+
+## Inbox sync flow — agent catches up
+
+When the agent opens the inbox or a thread:
+
+```
+GET …/chat-summaries  →  preview rows (last message snippet per active chat)
+GET …/chats/{chat_id}/messages  →  full thread (includes read_at for unread badges)
+POST …/messages/read  →  when a thread is opened (or live message while viewing it)
+```
+
+Unread is derived from `read_at` on stored messages; mark-read is REST only.

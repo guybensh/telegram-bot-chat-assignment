@@ -1,49 +1,50 @@
-import { threadKey } from "./keys";
+import { parseThreadKey, threadKey } from "./keys";
 
-export function bumpUnread(state, { msgBot, chatId, botUsername, routeChatId }) {
-  const isViewingThread = botUsername === msgBot && routeChatId === chatId;
-  if (isViewingThread) {
-    return {
-      unreadByChatId: state.unreadByChatId,
-      unreadByBotUsername: state.unreadByBotUsername,
-    };
-  }
-
-  const key = msgBot ? threadKey(msgBot, chatId) : String(chatId);
-  const unreadByChatId = {
-    ...state.unreadByChatId,
-    [key]: (state.unreadByChatId[key] || 0) + 1,
-  };
-
-  const unreadByBotUsername = msgBot
-    ? {
-        ...state.unreadByBotUsername,
-        [msgBot]: (state.unreadByBotUsername[msgBot] || 0) + 1,
-      }
-    : state.unreadByBotUsername;
-
-  return { unreadByChatId, unreadByBotUsername };
+/** User messages without `read_at` count as unread. */
+export function isUnreadMessage(message) {
+  return message.sender === "user" && message.read_at == null;
 }
 
-/** Clear thread unread and reduce the bot-level count by the same amount. */
-export function clearUnreadForThread(
-  unreadByChatId,
-  unreadByBotUsername,
-  botUsername,
-  chatId
-) {
-  const key = threadKey(botUsername, chatId);
-  const threadUnread = unreadByChatId[key] || 0;
-  const botUnread = unreadByBotUsername[botUsername] || 0;
+export function countUnreadMessages(messages) {
+  if (!messages?.length) return 0;
+  return messages.filter(isUnreadMessage).length;
+}
 
+export function selectUnreadByChatId(state) {
+  const unreadByChatId = {};
+  for (const [key, messages] of Object.entries(state.messagesByThread)) {
+    const count = countUnreadMessages(messages);
+    if (count > 0) unreadByChatId[key] = count;
+  }
+  return unreadByChatId;
+}
+
+export function selectUnreadByBotUsername(state) {
+  const unreadByBotUsername = {};
+  for (const [key, messages] of Object.entries(state.messagesByThread)) {
+    const parsed = parseThreadKey(key);
+    if (!parsed) continue;
+    const count = countUnreadMessages(messages);
+    if (count > 0) {
+      unreadByBotUsername[parsed.botUsername] =
+        (unreadByBotUsername[parsed.botUsername] || 0) + count;
+    }
+  }
+  return unreadByBotUsername;
+}
+
+export function markThreadReadInMessages(messagesByThread, botUsername, chatId, readAt) {
+  const key = threadKey(botUsername, chatId);
+  const thread = messagesByThread[key];
+  if (!thread) return messagesByThread;
+
+  const readAtMs = Date.parse(readAt);
   return {
-    unreadByChatId: {
-      ...unreadByChatId,
-      [key]: 0,
-    },
-    unreadByBotUsername: {
-      ...unreadByBotUsername,
-      [botUsername]: Math.max(0, botUnread - threadUnread),
-    },
+    ...messagesByThread,
+    [key]: thread.map((message) => {
+      if (message.sender !== "user" || message.read_at != null) return message;
+      if (Date.parse(message.timestamp) > readAtMs) return message;
+      return { ...message, read_at: readAt };
+    }),
   };
 }

@@ -12,14 +12,14 @@ export async function fetchBots() {
 }
 
 /**
- * List active conversations for one bot, with preview metadata for the inbox.
+ * List active chat summaries for one bot (inbox preview rows).
  */
-export async function fetchBotConversations(botUsername) {
+export async function fetchChatSummaries(botUsername) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/conversations`
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chat-summaries`
   );
   if (!res.ok) {
-    throw new Error(`Failed to load conversations (${res.status})`);
+    throw new Error(`Failed to load chat summaries (${res.status})`);
   }
   return res.json();
 }
@@ -38,9 +38,9 @@ export async function resetChat() {
 /**
  * Load one conversation's message history, in server-defined order.
  */
-export async function fetchHistory(botUsername, chatId) {
+export async function fetchMessages(botUsername, chatId) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages?chat_id=${chatId}`
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages`
   );
   if (!res.ok) {
     throw new Error(`Failed to load history (${res.status})`);
@@ -49,15 +49,33 @@ export async function fetchHistory(botUsername, chatId) {
 }
 
 /**
- * Forward an outgoing message to the connected Telegram chat.
+ * Mark user messages in a thread as read up to `read_at`.
  */
-export async function sendMessage(botUsername, message) {
+export async function markMessagesRead(botUsername, chatId, readAt) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages`,
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages/read`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message),
+      body: JSON.stringify({ read_at: readAt }),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Mark read failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Forward an outgoing message to the connected Telegram chat.
+ */
+export async function sendMessage(botUsername, chatId, { id, text, timestamp }) {
+  const res = await fetch(
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, text, timestamp }),
     }
   );
   if (!res.ok) {
