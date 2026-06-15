@@ -109,7 +109,6 @@ Real shell environment variables override both files.
 | `TELEGRAM_WEBHOOK_URL` | Public HTTPS base for webhook mode (e.g. ngrok URL) |
 | `TELEGRAM_WEBHOOK_PATH` | Webhook route prefix (default `/telegram/webhook`; bot token is appended) |
 | `TELEGRAM_WEBHOOK_SECRET` | Optional shared secret validated on inbound webhooks |
-| `CORS_ALLOWED_ORIGINS` | Allowed frontend origins (comma-separated) |
 
 **Bot config file** — copy the template and add the bots configuration properties:
 
