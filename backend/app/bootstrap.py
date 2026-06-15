@@ -47,7 +47,7 @@ def build_app_context() -> AppContext:
 
 async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
     """Register every bot declared in the bots JSON file via the message provider."""
-    logger.info("[Bootstrap::load_bots_from_config]: Attempt loading")
+    logger.info("[load_bots_from_config]: Attempt loading")
 
     if app_context.settings.telegram_mode == "mock":
         return [await app_context.bot_service.register_mock()]
@@ -59,7 +59,7 @@ async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
     bot_config_entries = get_bot_config_entries()
     if not bot_config_entries:
         logger.warning(
-            "[Bootstrap::load_bots_from_config]: No bots configured — add backend/app/config/bots.json"
+            "[load_bots_from_config]: No bots configured — add backend/app/config/bots.json"
         )
         return []
 
@@ -68,7 +68,7 @@ async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
         profile = await provider.fetch_bot_profile(entry.bot_id)
         if profile is None:
             logger.error(
-                "[Bootstrap::load_bots_from_config]: Skipping bot_id=%s — getMe failed or id mismatch",
+                "[load_bots_from_config]: Skipping bot_id=%s — getMe failed or id mismatch",
                 entry.bot_id,
             )
             continue
@@ -77,7 +77,7 @@ async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
         )
         bots.append(bot)
         logger.info(
-            "[Bootstrap::load_bots_from_config]: Loaded bot @%s (bot_id=%s, max_active_chats=%s)",
+            "[load_bots_from_config]: Loaded bot @%s (bot_id=%s, max_active_chats=%s)",
             bot.username,
             bot.bot_id,
             bot.max_chats,

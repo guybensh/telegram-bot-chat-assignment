@@ -41,7 +41,7 @@ def _load_bot_config_entries(settings: Settings) -> tuple[BotConfigEntry, ...]:
     config_path = resolve_bots_config_path(settings)
     if not config_path.is_file():
         logger.warning(
-            "[Bots::_load_bot_config_entries]: Bots config file %s not found",
+            "[_load_bot_config_entries]: Bots config file %s not found",
             config_path,
         )
         return ()
@@ -51,7 +51,7 @@ def _load_bot_config_entries(settings: Settings) -> tuple[BotConfigEntry, ...]:
         config = BotsConfigFile.model_validate(raw)
     except Exception:
         logger.exception(
-            "[Bots::_load_bot_config_entries]: Invalid bots config file %s",
+            "[_load_bot_config_entries]: Invalid bots config file %s",
             config_path,
         )
         return ()
@@ -60,7 +60,7 @@ def _load_bot_config_entries(settings: Settings) -> tuple[BotConfigEntry, ...]:
     for item in config.bots:
         if not item.token.strip():
             logger.warning(
-                "[Bots::_load_bot_config_entries]: Skipping bot_id=%s with empty token",
+                "[_load_bot_config_entries]: Skipping bot_id=%s with empty token",
                 item.bot_id,
             )
             continue

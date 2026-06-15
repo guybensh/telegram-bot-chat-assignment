@@ -23,7 +23,7 @@ def webhook_router(app_context: AppContext) -> APIRouter:
             bot = await app_context.bot_service.get_by_id(bot_id)
         except BotNotFoundError:
             logger.warning(
-                "[Webhook::telegram_webhook]: Webhook for unknown bot_id=%s", bot_id
+                "[telegram_webhook]: Webhook for unknown bot_id=%s", bot_id
             )
             return {"ok": True}
 
@@ -32,7 +32,7 @@ def webhook_router(app_context: AppContext) -> APIRouter:
         )
         if incoming is not None:
             logger.info(
-                "[Webhook::telegram_webhook]: Update via WEBHOOK (bot=%s, chat=%s)",
+                "[telegram_webhook]: Update via WEBHOOK (bot=%s, chat=%s)",
                 bot.username,
                 incoming.chat_id,
             )

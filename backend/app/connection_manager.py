@@ -43,6 +43,6 @@ class ConnectionManager:
                 await websocket.send_json(event)
             except Exception:
                 logger.info(
-                    "[ConnectionManager::broadcast]: Dropping unresponsive WebSocket client"
+                    "[broadcast]: Dropping unresponsive WebSocket client"
                 )
                 await self.disconnect(websocket)

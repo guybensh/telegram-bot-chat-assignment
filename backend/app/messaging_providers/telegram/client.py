@@ -1,3 +1,4 @@
+import json
 import logging
 
 import httpx
@@ -30,13 +31,13 @@ class TelegramClient:
             if data.get("ok"):
                 return data.get("result")
         except Exception:
-            logger.exception("[TelegramClient::get_me]: getMe failed")
+            logger.exception("[get_me]: getMe failed")
         return None
 
     async def send_message(self, token: str, chat_id: int, text: str) -> bool:
         if self._mock:
             logger.info(
-                "[TelegramClient::send_message]: Mock mode: simulating successful Telegram delivery"
+                "[send_message]: Mock mode: simulating successful Telegram delivery"
             )
             return True
         try:
@@ -46,7 +47,7 @@ class TelegramClient:
             )
             return bool(resp.json().get("ok"))
         except Exception:
-            logger.exception("[TelegramClient::send_message]: sendMessage failed")
+            logger.exception("[send_message]: sendMessage failed")
             return False
 
     async def get_updates(
@@ -65,7 +66,7 @@ class TelegramClient:
             )
             if resp.status_code != 200:
                 logger.warning(
-                    "[TelegramClient::get_updates]: getUpdates HTTP %s: %s",
+                    "[get_updates]: getUpdates HTTP %s: %s",
                     resp.status_code,
                     resp.text[:200],
                 )
@@ -73,7 +74,7 @@ class TelegramClient:
             data = resp.json()
             return data.get("result", []) if data.get("ok") else None
         except Exception:
-            logger.exception("[TelegramClient::get_updates]: getUpdates failed")
+            logger.exception("[get_updates]: getUpdates failed")
             return None
 
     async def set_webhook(
@@ -88,7 +89,7 @@ class TelegramClient:
             )
             return bool(resp.json().get("ok"))
         except Exception:
-            logger.exception("[TelegramClient::set_webhook]: setWebhook failed")
+            logger.exception("[set_webhook]: setWebhook failed")
             return False
 
     async def delete_webhook(self, token: str) -> bool:
@@ -96,5 +97,5 @@ class TelegramClient:
             resp = await self._http.post(self._url(token, "deleteWebhook"))
             return bool(resp.json().get("ok"))
         except Exception:
-            logger.exception("[TelegramClient::delete_webhook]: deleteWebhook failed")
+            logger.exception("[delete_webhook]: deleteWebhook failed")
             return False

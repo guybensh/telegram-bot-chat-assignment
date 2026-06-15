@@ -21,7 +21,7 @@ class MockListener(MessageListener):
             return
         bot = bots[0]
         logger.info(
-            "[MockListener::start]: Mock mode: simulated incoming message every 10s"
+            "[start]: Mock mode: simulated incoming message every 10s"
         )
         self._poller = TelegramPoller(
             self._provider,

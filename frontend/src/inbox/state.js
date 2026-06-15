@@ -7,7 +7,7 @@ import {
 
 export const emptyInboxState = () => ({
   bots: [],
-  conversations: [],
+  conversationsByBot: {},
   messagesByThread: {},
   unreadByChatId: {},
   unreadByBotUsername: {},
@@ -17,7 +17,9 @@ export function createInitialInboxState(botUsername) {
   if (!USE_MOCK) return emptyInboxState();
   return {
     bots: buildMockBots(),
-    conversations: botUsername ? mockConversationsForBot(botUsername) : [],
+    conversationsByBot: botUsername
+      ? { [botUsername]: mockConversationsForBot(botUsername) }
+      : {},
     messagesByThread: buildMockMessagesByThread(),
     unreadByChatId: {},
     unreadByBotUsername: {},

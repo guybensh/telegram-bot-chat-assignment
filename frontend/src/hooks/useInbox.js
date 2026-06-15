@@ -13,7 +13,7 @@ import {
   inboxReducer,
   shouldReloadBotsAfterWsEvent,
 } from "../inbox/reducer";
-import { selectConversation, selectMessages } from "../inbox/selectors";
+import { selectConversation, selectConversations, selectMessages } from "../inbox/selectors";
 import { createInitialInboxState } from "../inbox/state";
 import { useWebSocket } from "./useWebSocket";
 
@@ -65,10 +65,7 @@ export function useInbox(botUsername, chatId) {
   useEffect(() => loadBots(), [loadBots]);
 
   useEffect(() => {
-    if (!botUsername) {
-      dispatch({ type: "CONVERSATIONS_CLEARED" });
-      return;
-    }
+    if (!botUsername) return;
     if (USE_MOCK) {
       dispatch({ type: "MOCK_SYNC_BOT", botUsername });
     }
@@ -79,9 +76,9 @@ export function useInbox(botUsername, chatId) {
     dispatch({
       type: "SYNC_ACTIVE_CHATS",
       botUsername,
-      count: state.conversations.length,
+      count: selectConversations(state, botUsername).length,
     });
-  }, [botUsername, state.conversations.length]);
+  }, [botUsername, state.conversationsByBot]);
 
   useEffect(() => {
     if (!botUsername || USE_MOCK) return undefined;
@@ -89,7 +86,11 @@ export function useInbox(botUsername, chatId) {
     fetchBotConversations(botUsername)
       .then((list) => {
         if (!cancelled) {
-          dispatch({ type: "CONVERSATIONS_LOADED", conversations: list });
+          dispatch({
+            type: "CONVERSATIONS_LOADED",
+            botUsername,
+            conversations: list,
+          });
         }
       })
       .catch((err) => console.error("Could not load conversations", err));
@@ -120,13 +121,8 @@ export function useInbox(botUsername, chatId) {
 
   useEffect(() => {
     if (!botUsername || chatId == null) return;
-    dispatch({ type: "CLEAR_UNREAD_CHAT", botUsername, chatId });
+    dispatch({ type: "CLEAR_UNREAD_THREAD", botUsername, chatId });
   }, [botUsername, chatId]);
-
-  useEffect(() => {
-    if (!botUsername) return;
-    dispatch({ type: "CLEAR_UNREAD_BOT", botUsername });
-  }, [botUsername]);
 
   const send = useCallback(
     async (text) => {
@@ -212,7 +208,7 @@ export function useInbox(botUsername, chatId) {
 
   return {
     bots: state.bots,
-    conversations: state.conversations,
+    conversations: selectConversations(state, botUsername),
     selectedConversation: selectConversation(state, botUsername, chatId),
     messages: selectMessages(state, botUsername, chatId),
     connectionStatus,
