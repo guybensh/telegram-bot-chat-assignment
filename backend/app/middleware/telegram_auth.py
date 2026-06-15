@@ -12,7 +12,7 @@ from ..domain.bot import BotNotFoundError
 logger = logging.getLogger(__name__)
 
 
-def expected_webhook_path(webhook_path: str, bot_id: int) -> str:
+def expected_webhook_path(webhook_path: str, bot_id: str) -> str:
     return f"{webhook_path.rstrip('/')}/{bot_id}"
 
 
@@ -40,7 +40,7 @@ def build_telegram_authentication(
 
     async def telegram_authentication(
         request: Request,
-        bot_id: int,
+        bot_id: str,
         settings: Settings = Depends(get_settings),
         x_telegram_bot_api_secret_token: str | None = Header(default=None),
     ) -> None:

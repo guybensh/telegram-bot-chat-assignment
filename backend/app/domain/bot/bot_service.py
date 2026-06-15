@@ -24,7 +24,7 @@ class BotService:
             raise BotNotFoundError(username)
         return record
 
-    async def get_by_id(self, bot_id: int) -> BotRecord:
+    async def get_by_id(self, bot_id: str) -> BotRecord:
         record = await self._repository.get_by_id(bot_id)
         if record is None:
             raise BotNotFoundError(str(bot_id))
@@ -50,7 +50,7 @@ class BotService:
     async def register_mock(self, *, max_chats: int | None = None) -> BotRecord:
         return await self._repository.create(
             BotRecord(
-                bot_id=99_000_001,
+                bot_id="99000001",
                 bot_name="Mock Bot",
                 username="mock_bot",
                 max_chats=max_chats

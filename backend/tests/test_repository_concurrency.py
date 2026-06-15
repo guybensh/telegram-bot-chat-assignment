@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from app.domain.chat.repository.in_memory_chat_repository import InMemoryChatRepository
 from app.models import Message, Sender, Status
 
-_BOT_ID = 1
+_BOT_ID = "1"
 
 
 def _message(message_id: str, chat_id: str) -> Message:

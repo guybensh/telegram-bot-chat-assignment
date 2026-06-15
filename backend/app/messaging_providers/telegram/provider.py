@@ -8,7 +8,7 @@ from .client import TelegramClient
 
 logger = logging.getLogger(__name__)
 
-_MOCK_BOT_ID = 99_000_001
+_MOCK_BOT_ID = "99000001"
 _MOCK_TOKEN = "mock-token"
 
 
@@ -20,24 +20,24 @@ class TelegramProvider(MessageProvider):
         self._client = TelegramClient(
             settings.telegram_api_base, mock=self._mock
         )
-        self._tokens: dict[int, str] = {}
+        self._tokens: dict[str, str] = {}
         if self._mock:
             self._tokens[_MOCK_BOT_ID] = _MOCK_TOKEN
         else:
             for entry in get_bot_config_entries():
                 self._tokens[entry.bot_id] = entry.token
 
-    def has_bot(self, bot_id: int) -> bool:
+    def has_bot(self, bot_id: str) -> bool:
         return bot_id in self._tokens
 
-    async def fetch_bot_profile(self, bot_id: int) -> ProviderBotProfile | None:
+    async def fetch_bot_profile(self, bot_id: str) -> ProviderBotProfile | None:
         token = self._tokens.get(bot_id)
         if token is None:
             return None
         bot = await self._client.get_me(token)
         if not bot:
             return None
-        resolved_id = bot["id"]
+        resolved_id = str(bot["id"])
         if resolved_id != bot_id:
             logger.warning(
                 "[TelegramProvider::fetch_bot_profile]: bot_id mismatch — config=%s getMe=%s",
@@ -51,7 +51,7 @@ class TelegramProvider(MessageProvider):
             username=bot.get("username") or f"bot{resolved_id}",
         )
 
-    async def send_message(self, bot_id: int, chat_id: str, text: str) -> bool:
+    async def send_message(self, bot_id: str, chat_id: str, text: str) -> bool:
         token = self._tokens.get(bot_id)
         if token is None:
             return False
@@ -84,7 +84,7 @@ class TelegramProvider(MessageProvider):
         await self._client.close()
 
     async def get_updates(
-        self, bot_id: int, offset: int, timeout: int = 30
+        self, bot_id: str, offset: int, timeout: int = 30
     ) -> list[dict] | None:
         token = self._tokens.get(bot_id)
         if token is None:
@@ -92,14 +92,14 @@ class TelegramProvider(MessageProvider):
         return await self._client.get_updates(token, offset, timeout)
 
     async def set_webhook(
-        self, bot_id: int, url: str, secret: str | None = None
+        self, bot_id: str, url: str, secret: str | None = None
     ) -> bool:
         token = self._tokens.get(bot_id)
         if token is None:
             return False
         return await self._client.set_webhook(token, url, secret)
 
-    async def delete_webhook(self, bot_id: int) -> bool:
+    async def delete_webhook(self, bot_id: str) -> bool:
         token = self._tokens.get(bot_id)
         if token is None:
             return False

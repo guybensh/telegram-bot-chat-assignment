@@ -35,7 +35,7 @@ class Message(BaseModel):
     """
 
     id: str
-    bot_id: int
+    bot_id: str
     chat_id: str
     text: str
     timestamp: datetime
@@ -47,7 +47,7 @@ class ConversationSummary(BaseModel):
     """Lightweight row for the inbox conversation list."""
 
     chat_id: str
-    bot_id: int
+    bot_id: str
     bot_username: str
     title: str
     last_message_text: str | None = None

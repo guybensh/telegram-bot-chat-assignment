@@ -11,8 +11,8 @@ class BotRepository(ABC):
         """Every registered bot."""
 
     @abstractmethod
-    async def get_by_id(self, bot_id: int) -> BotRecord | None:
-        """Lookup by Telegram bot id."""
+    async def get_by_id(self, bot_id: str) -> BotRecord | None:
+        """Lookup by provider bot id."""
 
     @abstractmethod
     async def get_by_username(self, username: str) -> BotRecord | None:
