@@ -1,11 +1,13 @@
 import logging
+from collections.abc import Callable, Coroutine
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, Header, HTTPException, Request
 
-from ..domain.bot import BotNotFoundError
+from ..bootstrap import AppContext
 from ..config import Settings, get_settings
-from ..bootstrap import get_deps
+from ..domain.bot import BotNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -31,30 +33,34 @@ def _matches_webhook_host(request: Request, settings: Settings) -> bool:
     return True
 
 
-async def telegram_authentication(
-    request: Request,
-    bot_token: str,
-    settings: Settings = Depends(get_settings),
-    x_telegram_bot_api_secret_token: str | None = Header(default=None),
-) -> None:
-    """Route-scoped guard for the webhook — validates path, token, and secret."""
-    bot_service = get_deps().bot_service
+def build_telegram_authentication(
+    app_context: AppContext,
+) -> Callable[..., Coroutine[Any, Any, None]]:
+    """Route-scoped guard factory for the webhook router."""
 
-    if request.url.path != expected_webhook_path(
-        settings.telegram_webhook_path, bot_token
-    ):
-        logger.warning("Blocked webhook request with unexpected URL: %s", request.url)
-        raise HTTPException(status_code=403, detail="Forbidden")
+    async def telegram_authentication(
+        request: Request,
+        bot_token: str,
+        settings: Settings = Depends(get_settings),
+        x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    ) -> None:
+        if request.url.path != expected_webhook_path(
+            settings.telegram_webhook_path, bot_token
+        ):
+            logger.warning("Blocked webhook request with unexpected URL: %s", request.url)
+            raise HTTPException(status_code=403, detail="Forbidden")
 
-    if not _matches_webhook_host(request, settings):
-        logger.warning("Blocked webhook request with unexpected host: %s", request.url)
-        raise HTTPException(status_code=403, detail="Forbidden")
+        if not _matches_webhook_host(request, settings):
+            logger.warning("Blocked webhook request with unexpected host: %s", request.url)
+            raise HTTPException(status_code=403, detail="Forbidden")
 
-    try:
-        await bot_service.get_record_by_token(bot_token)
-    except BotNotFoundError:
-        raise HTTPException(status_code=403, detail="Invalid bot token")
+        try:
+            await app_context.bot_service.get_record_by_token(bot_token)
+        except BotNotFoundError:
+            raise HTTPException(status_code=403, detail="Invalid bot token")
 
-    if settings.telegram_webhook_secret:
-        if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
-            raise HTTPException(status_code=403, detail="Invalid secret token")
+        if settings.telegram_webhook_secret:
+            if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:
+                raise HTTPException(status_code=403, detail="Invalid secret token")
+
+    return telegram_authentication

@@ -2,44 +2,37 @@ import logging
 
 from fastapi import APIRouter, Depends, Request
 
-from ..domain.bot import BotNotFoundError, BotService
-from ..domain.chat import ChatService
-from ..middleware import telegram_authentication
-from ..messaging_providers import MessageProvider
+from ..bootstrap import AppContext
+from ..domain.bot import BotNotFoundError
+from ..middleware import build_telegram_authentication
 
 logger = logging.getLogger(__name__)
 
 
-def build_webhook_router(
-    *,
-    message_provider: MessageProvider,
-    chat: ChatService,
-    bot_service: BotService,
-    webhook_path: str,
-) -> APIRouter:
+def webhook_router(app_context: AppContext) -> APIRouter:
     """Webhook routes with guards attached only to this router (Express-style)."""
     router = APIRouter(
-        prefix=webhook_path.rstrip("/"),
+        prefix=app_context.settings.telegram_webhook_path.rstrip("/"),
         tags=["telegram"],
-        dependencies=[Depends(telegram_authentication)],
+        dependencies=[Depends(build_telegram_authentication(app_context))],
     )
 
     @router.post("/{bot_token}")
     async def telegram_webhook(request: Request, bot_token: str) -> dict[str, bool]:
         try:
-            bot = await bot_service.get_record_by_token(bot_token)
+            bot = await app_context.bot_service.get_record_by_token(bot_token)
         except BotNotFoundError:
             logger.warning("Webhook for unknown bot token")
             return {"ok": True}
 
-        incoming = message_provider.parse_incoming(await request.json())
+        incoming = app_context.message_provider.parse_incoming_message(await request.json())
         if incoming is not None:
             logger.info(
                 "Update via WEBHOOK (bot=%s, chat=%s)",
                 bot.username,
                 incoming.chat_id,
             )
-            await chat.handle_incoming(bot.bot_id, incoming)
+            await app_context.chat_service.handle_incoming(bot.bot_id, incoming)
         return {"ok": True}
 
     return router

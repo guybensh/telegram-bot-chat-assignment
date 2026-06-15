@@ -1,10 +1,13 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from ...domain.chat import ChatService
 from ...messaging_providers.types import IncomingMessage
-from .provider import TelegramProvider
+
+if TYPE_CHECKING:
+    from .provider import TelegramProvider
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +19,14 @@ class TelegramPoller:
 
     def __init__(
         self,
-        provider: TelegramProvider,
-        chat: ChatService,
+        provider: "TelegramProvider",
+        chat_service: ChatService,
         *,
         bot_id: int,
         token: str,
     ) -> None:
         self._provider = provider
-        self._chat = chat
+        self._chat_service = chat_service
         self._bot_id = bot_id
         self._token = token
         self._task: asyncio.Task | None = None
@@ -65,7 +68,9 @@ class TelegramPoller:
                             update["update_id"],
                             incoming.chat_id,
                         )
-                        await self._chat.handle_incoming(self._bot_id, incoming)
+                        await self._chat_service.handle_incoming(
+                            self._bot_id, incoming
+                        )
             except asyncio.CancelledError:
                 logger.info("Telegram polling stopped")
                 raise
@@ -80,7 +85,7 @@ class TelegramPoller:
             try:
                 await asyncio.sleep(interval_seconds)
                 counter += 1
-                await self._chat.handle_incoming(
+                await self._chat_service.handle_incoming(
                     self._bot_id,
                     IncomingMessage(
                         chat_id=_MOCK_CHAT_ID,

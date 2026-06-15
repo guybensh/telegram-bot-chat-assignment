@@ -3,20 +3,20 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from ..domain.bot import BotNotFoundError
 from ..domain.bot.record import BotInboxItem
 from ..domain.chat import NoActiveConversationError
-from ..bootstrap import Dependencies
+from ..bootstrap import AppContext
 from ..models import ConversationSummary, Message, SendMessageRequest
 
 router = APIRouter()
 
 
-def register_routes(deps: Dependencies) -> APIRouter:
+def app_router(deps: AppContext) -> APIRouter:
     @router.get("/health")
     async def health():
         return {"status": "ok"}
 
     @router.post("/reset")
     async def admin_reset():
-        await deps.chat.reset()
+        await deps.chat_service.reset()
         return {"status": "reset"}
 
     @router.get("/bots", response_model=list[BotInboxItem])
@@ -24,7 +24,7 @@ def register_routes(deps: Dependencies) -> APIRouter:
         records = await deps.bot_service.list_bots()
         items: list[BotInboxItem] = []
         for bot in records:
-            active_chats = await deps.chat.count_active_chats(bot.bot_id)
+            active_chats = await deps.chat_service.count_active_chats(bot.bot_id)
             items.append(
                 BotInboxItem(
                     bot_id=bot.bot_id,
@@ -42,21 +42,21 @@ def register_routes(deps: Dependencies) -> APIRouter:
     )
     async def get_bot_conversations(username: str):
         try:
-            return await deps.chat.list_conversation_summaries(username)
+            return await deps.chat_service.list_conversation_summaries(username)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
     @router.get("/bots/{username}/messages", response_model=list[Message])
     async def get_messages(username: str, chat_id: int):
         try:
-            return await deps.chat.get_history(username, chat_id)
+            return await deps.chat_service.get_history(username, chat_id)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
     @router.post("/bots/{username}/messages", response_model=Message)
     async def post_message(username: str, payload: SendMessageRequest):
         try:
-            return await deps.chat.send_message(
+            return await deps.chat_service.send_message(
                 username,
                 payload.id,
                 payload.chat_id,
