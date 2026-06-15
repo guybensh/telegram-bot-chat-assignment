@@ -6,7 +6,7 @@ from .types import IncomingMessage
 
 @dataclass(frozen=True)
 class ProviderBotProfile:
-    """Bot identity resolved from provider credentials (e.g. a bot token)."""
+    """Bot identity from the messaging provider (e.g. Telegram getMe)."""
 
     bot_id: int
     name: str
@@ -14,14 +14,14 @@ class ProviderBotProfile:
 
 
 class MessageProvider(ABC):
-    """Outbound delivery, bot registration, and incoming payload parsing."""
+    """Outbound delivery, incoming parsing, and provider-side credentials."""
 
     @abstractmethod
-    async def resolve_bot(self, credentials: str) -> ProviderBotProfile | None:
-        """Resolve provider credentials into bot profile metadata."""
+    async def fetch_bot_profile(self, bot_id: int) -> ProviderBotProfile | None:
+        """Resolve and validate bot metadata for a configured bot_id."""
 
     @abstractmethod
-    async def send_message(self, credentials: str, chat_id: int, text: str) -> bool:
+    async def send_message(self, bot_id: int, chat_id: str, text: str) -> bool:
         """Deliver text to a remote participant in an existing conversation."""
 
     @abstractmethod

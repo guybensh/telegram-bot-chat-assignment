@@ -13,7 +13,7 @@ from app.models import Message, Sender, Status
 _BOT_ID = 1
 
 
-def _message(message_id: str, chat_id: int) -> Message:
+def _message(message_id: str, chat_id: str) -> Message:
     return Message(
         id=message_id,
         bot_id=_BOT_ID,
@@ -28,14 +28,16 @@ def _message(message_id: str, chat_id: int) -> Message:
 async def test_concurrent_register_respects_capacity() -> None:
     repo = InMemoryChatRepository()
 
-    async def try_register(chat_id: int) -> bool:
+    async def try_register(chat_id: str) -> bool:
         if not await repo.register_chat(_BOT_ID, chat_id, max_chats=1):
             return False
         await repo.add_message(_BOT_ID, chat_id, _message(f"id-{chat_id}", chat_id))
         return True
 
-    results = await asyncio.gather(*(try_register(chat_id) for chat_id in range(50)))
-    admitted = [chat_id for chat_id, ok in enumerate(results) if ok]
+    results = await asyncio.gather(
+        *(try_register(str(chat_id)) for chat_id in range(50))
+    )
+    admitted = [str(chat_id) for chat_id, ok in enumerate(results) if ok]
 
     assert len(admitted) == 1
     assert await repo.active_chats(_BOT_ID) == admitted
@@ -44,7 +46,7 @@ async def test_concurrent_register_respects_capacity() -> None:
 
 async def test_concurrent_adds_preserve_all_messages() -> None:
     repo = InMemoryChatRepository()
-    chat_id = 42
+    chat_id = "42"
     await repo.register_chat(_BOT_ID, chat_id, max_chats=1)
 
     async def add_one(index: int) -> None:
@@ -59,7 +61,7 @@ async def test_concurrent_adds_preserve_all_messages() -> None:
 
 async def test_add_is_atomic_with_reset() -> None:
     repo = InMemoryChatRepository()
-    chat_id = 7
+    chat_id = "7"
     await repo.register_chat(_BOT_ID, chat_id, max_chats=1)
 
     async def reset_loop() -> None:

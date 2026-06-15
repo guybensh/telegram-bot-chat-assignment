@@ -1,61 +1,82 @@
 import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .settings import Settings
+from .settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
 
-class BotConfigFile(BaseModel):
-    """Per-bot settings loaded from app/config/bots/*.json."""
+class BotConfigItem(BaseModel):
+    """One bot entry in the shared bots credentials file."""
 
+    bot_id: int
     token: str
     max_active_chats: int | None = None
 
 
+class BotsConfigFile(BaseModel):
+    bots: list[BotConfigItem] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class BotConfigEntry:
+    bot_id: int
     token: str
     max_active_chats: int
-    source: str
 
 
-def resolve_bots_config_dir() -> Path:
-    """Return app/config/bots/."""
-    return (Path(__file__).resolve().parent / "bots").resolve()
+def resolve_bots_config_path(settings: Settings) -> Path:
+    if settings.bots_config_path.strip():
+        return Path(settings.bots_config_path).expanduser().resolve()
+    return (Path(__file__).resolve().parent / "bots.json").resolve()
 
 
-def load_bot_config_entries(settings: Settings) -> list[BotConfigEntry]:
-    """Load every *.json bot config file from app/config/bots/."""
-    config_dir = resolve_bots_config_dir()
-    if not config_dir.is_dir():
+def _load_bot_config_entries(settings: Settings) -> tuple[BotConfigEntry, ...]:
+    """Read and parse the bots JSON file once per process (via get_bot_config_entries)."""
+    config_path = resolve_bots_config_path(settings)
+    if not config_path.is_file():
         logger.warning(
-            "Bots config directory %s not found — add JSON files under app/config/bots/",
-            config_dir,
+            "[Bots::_load_bot_config_entries]: Bots config file %s not found",
+            config_path,
         )
-        return []
+        return ()
+
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        config = BotsConfigFile.model_validate(raw)
+    except Exception:
+        logger.exception(
+            "[Bots::_load_bot_config_entries]: Invalid bots config file %s",
+            config_path,
+        )
+        return ()
 
     entries: list[BotConfigEntry] = []
-    for path in sorted(config_dir.glob("*.json")):
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            config = BotConfigFile.model_validate(raw)
-            if not config.token.strip():
-                logger.warning("Skipping empty token in %s", path.name)
-                continue
-            entries.append(
-                BotConfigEntry(
-                    token=config.token.strip(),
-                    max_active_chats=config.max_active_chats
-                    if config.max_active_chats is not None
-                    else settings.default_max_active_chats,
-                    source=path.name,
-                )
+    for item in config.bots:
+        if not item.token.strip():
+            logger.warning(
+                "[Bots::_load_bot_config_entries]: Skipping bot_id=%s with empty token",
+                item.bot_id,
             )
-        except Exception:
-            logger.exception("Invalid bot config file %s", path.name)
-    return entries
+            continue
+        entries.append(
+            BotConfigEntry(
+                bot_id=item.bot_id,
+                token=item.token.strip(),
+                max_active_chats=item.max_active_chats
+                if item.max_active_chats is not None
+                else settings.default_max_active_chats,
+            )
+        )
+    return tuple(entries)
+
+
+@lru_cache
+def get_bot_config_entries() -> tuple[BotConfigEntry, ...]:
+    """Cached bot credentials — loaded once per process, like get_settings()."""
+    return _load_bot_config_entries(get_settings())

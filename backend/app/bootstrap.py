@@ -1,10 +1,9 @@
 import logging
 from dataclasses import dataclass
 
-from .config import Settings, get_settings, load_bot_config_entries
+from .config import Settings, get_settings, get_bot_config_entries
 from .connection_manager import ConnectionManager
 from .domain.bot import BotService
-from .domain.bot.bot_service import BotRegistrationError
 from .domain.bot.record import BotRecord
 from .domain.bot.repository import InMemoryBotRepository
 from .domain.chat import ChatService
@@ -32,9 +31,7 @@ def build_app_context() -> AppContext:
     bot_service = BotService(InMemoryBotRepository(), settings)
     connection_manager = ConnectionManager()
     chat_repository = InMemoryChatRepository()
-    message_provider = TelegramProvider(
-        settings.telegram_api_base, mock=settings.telegram_mode == "mock"
-    )
+    message_provider = TelegramProvider(settings)
     chat_service = ChatService(
         chat_repository, connection_manager, message_provider, bot_service
     )
@@ -49,36 +46,40 @@ def build_app_context() -> AppContext:
 
 
 async def load_bots_from_config(app_context: AppContext) -> list[BotRecord]:
-    """Register every bot declared in app/config/bots/*.json via the message provider."""
+    """Register every bot declared in the bots JSON file via the message provider."""
+    logger.info("[Bootstrap::load_bots_from_config]: Attempt loading")
+
     if app_context.settings.telegram_mode == "mock":
         return [await app_context.bot_service.register_mock()]
 
-    bot_config_entries = load_bot_config_entries(app_context.settings)
+    provider = app_context.message_provider
+    if not isinstance(provider, TelegramProvider):
+        raise TypeError("load_bots_from_config requires TelegramProvider")
+
+    bot_config_entries = get_bot_config_entries()
     if not bot_config_entries:
         logger.warning(
-            "[Bootstrap: load_bots_from_config]: No bot config files found — add JSON files under app/config/bots/"
+            "[Bootstrap::load_bots_from_config]: No bots configured — add backend/app/config/bots.json"
         )
         return []
 
     bots: list[BotRecord] = []
-    for bot_config_entry in bot_config_entries:
-        try:
-            bot = await app_context.bot_service.register(
-                bot_config_entry.token,
-                app_context.message_provider,
-                max_chats=bot_config_entry.max_active_chats,
+    for entry in bot_config_entries:
+        profile = await provider.fetch_bot_profile(entry.bot_id)
+        if profile is None:
+            logger.error(
+                "[Bootstrap::load_bots_from_config]: Skipping bot_id=%s — getMe failed or id mismatch",
+                entry.bot_id,
             )
-            bots.append(bot)
-            logger.info(
-                "Loaded bot @%s from %s (max_active_chats=%s)",
-                bot.username,
-                bot_config_entry.source,
-                bot.max_chats,
-            )
-        except BotRegistrationError:
-            logger.exception(
-                "Skipping bot from %s — getMe failed for token prefix %s",
-                bot_config_entry.source,
-                bot_config_entry.token.split(":", 1)[0],
-            )
+            continue
+        bot = await app_context.bot_service.create(
+            profile, max_chats=entry.max_active_chats
+        )
+        bots.append(bot)
+        logger.info(
+            "[Bootstrap::load_bots_from_config]: Loaded bot @%s (bot_id=%s, max_active_chats=%s)",
+            bot.username,
+            bot.bot_id,
+            bot.max_chats,
+        )
     return bots

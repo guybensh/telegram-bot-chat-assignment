@@ -1,6 +1,6 @@
 import logging
 
-from .config import Settings, load_bot_config_entries
+from .config import Settings, get_bot_config_entries
 
 
 class _RedactTokenFilter(logging.Filter):
@@ -18,5 +18,5 @@ class _RedactTokenFilter(logging.Filter):
 
 def configure_logging(settings: Settings) -> None:
     logging.basicConfig(level=logging.INFO)
-    for entry in load_bot_config_entries(settings):
+    for entry in get_bot_config_entries():
         logging.getLogger("httpx").addFilter(_RedactTokenFilter(entry.token))

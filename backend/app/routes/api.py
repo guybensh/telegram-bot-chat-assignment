@@ -47,7 +47,7 @@ def app_router(deps: AppContext) -> APIRouter:
             raise HTTPException(status_code=404, detail="Bot not found")
 
     @router.get("/bots/{username}/messages", response_model=list[Message])
-    async def get_messages(username: str, chat_id: int):
+    async def get_messages(username: str, chat_id: str):
         try:
             return await deps.chat_service.get_history(username, chat_id)
         except BotNotFoundError:

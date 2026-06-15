@@ -31,14 +31,12 @@ class Status(str, Enum):
 class Message(BaseModel):
     """The single message shape shared by REST responses and WebSocket events.
 
-    `chat_id` is the Telegram conversation it belongs to. `bot_id` scopes it to
-    the bot that owns the thread — required because the same Telegram user id
-    can appear as `chat_id` across different bots.
+    `chat_id` is the provider's conversation identifier (scoped by `bot_id`).
     """
 
     id: str
     bot_id: int
-    chat_id: int
+    chat_id: str
     text: str
     timestamp: datetime
     sender: Sender
@@ -48,7 +46,7 @@ class Message(BaseModel):
 class ConversationSummary(BaseModel):
     """Lightweight row for the inbox conversation list."""
 
-    chat_id: int
+    chat_id: str
     bot_id: int
     bot_username: str
     title: str
@@ -63,6 +61,6 @@ class SendMessageRequest(BaseModel):
     assigned server-side. Unknown fields are ignored."""
 
     id: str
-    chat_id: int
+    chat_id: str
     text: str
     timestamp: datetime

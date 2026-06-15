@@ -8,7 +8,7 @@ import { ConnectionStatus } from "../components/ConnectionStatus";
 export function InboxPage() {
   const { botUsername, chatId: chatIdParam } = useParams();
   const navigate = useNavigate();
-  const chatId = chatIdParam ? Number(chatIdParam) : null;
+  const chatId = chatIdParam ?? null;
 
   const {
     bots,

@@ -15,7 +15,7 @@ def _env_files() -> tuple[str, ...]:
 
 
 class Settings(BaseSettings):
-    """General app configuration (.env). Bot tokens live in app/config/bots/*.json."""
+    """General app configuration (.env). Bot tokens live in the bots JSON file."""
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),
@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     telegram_webhook_url: str = ""
     telegram_webhook_path: str = "/telegram/webhook"
     telegram_webhook_secret: str = ""
+
+    bots_config_path: str = ""
 
     cors_allowed_origins: list[str] = ["http://localhost:5173"]
 

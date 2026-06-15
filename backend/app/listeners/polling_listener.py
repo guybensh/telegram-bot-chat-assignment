@@ -18,21 +18,25 @@ class PollingListener(MessageListener):
 
     async def start(self, app_context: AppContext, bots: list[BotRecord]) -> None:
         if not bots:
-            logger.warning("No bots registered — polling disabled")
+            logger.warning(
+                "[PollingListener::start]: No bots registered — polling disabled"
+            )
             return
 
         for bot in bots:
-            token = await app_context.bot_service.get_token(bot.username)
-            await self._provider.delete_webhook(token)
+            await self._provider.delete_webhook(bot.bot_id)
             poller = TelegramPoller(
                 self._provider,
                 app_context.chat_service,
                 bot_id=bot.bot_id,
-                token=token,
             )
             self._pollers.append(poller)
             await poller.start_polling()
-            logger.info("Polling started for @%s", bot.username)
+            logger.info(
+                "[PollingListener::start]: Polling started for @%s (bot_id=%s)",
+                bot.username,
+                bot.bot_id,
+            )
 
     async def stop(self) -> None:
         for poller in self._pollers:

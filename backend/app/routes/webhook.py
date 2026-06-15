@@ -17,18 +17,22 @@ def webhook_router(app_context: AppContext) -> APIRouter:
         dependencies=[Depends(build_telegram_authentication(app_context))],
     )
 
-    @router.post("/{bot_token}")
-    async def telegram_webhook(request: Request, bot_token: str) -> dict[str, bool]:
+    @router.post("/{bot_id}")
+    async def telegram_webhook(request: Request, bot_id: int) -> dict[str, bool]:
         try:
-            bot = await app_context.bot_service.get_record_by_token(bot_token)
+            bot = await app_context.bot_service.get_by_id(bot_id)
         except BotNotFoundError:
-            logger.warning("Webhook for unknown bot token")
+            logger.warning(
+                "[Webhook::telegram_webhook]: Webhook for unknown bot_id=%s", bot_id
+            )
             return {"ok": True}
 
-        incoming = app_context.message_provider.parse_incoming_message(await request.json())
+        incoming = app_context.message_provider.parse_incoming_message(
+            await request.json()
+        )
         if incoming is not None:
             logger.info(
-                "Update via WEBHOOK (bot=%s, chat=%s)",
+                "[Webhook::telegram_webhook]: Update via WEBHOOK (bot=%s, chat=%s)",
                 bot.username,
                 incoming.chat_id,
             )

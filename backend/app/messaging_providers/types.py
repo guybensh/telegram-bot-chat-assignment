@@ -6,7 +6,7 @@ from datetime import datetime
 class IncomingMessage:
     """Provider-neutral incoming text message from a remote participant."""
 
-    chat_id: int
+    chat_id: str
     message_id: int
     text: str
     timestamp: datetime
