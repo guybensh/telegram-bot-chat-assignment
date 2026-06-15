@@ -15,7 +15,7 @@ def _env_files() -> tuple[str, ...]:
 
 
 class Settings(BaseSettings):
-    """General app configuration (.env). Bot tokens live in config/bots/*.json."""
+    """General app configuration (.env). Bot tokens live in app/config/bots/*.json."""
 
     model_config = SettingsConfigDict(
         env_file=_env_files(),

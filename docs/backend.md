@@ -21,19 +21,82 @@ the cross-layer contract.
 
 ```
 backend/app/
-  config.py              Settings from env / .env (token, mode, webhook, max chats)
-  models.py              Message + Sender/Status enums; SendMessageRequest
-  connection_manager.py  WebSocket client registry + broadcast
-  telegram_api.py        Thin HTTP wrapper over the Telegram Bot API
-  telegram_service.py    Isolated Telegram gateway: send + parse updates
-  telegram_poller.py     Pull driver: poll/mock loop → parse → domain
-  main.py                FastAPI app: routes, wiring, lifespan
-  chat/                  The chat domain
-    chat_service.py        How incoming/outgoing messages are processed
-    repository/            Data-access layer (DAL)
-      chat_repository.py            ChatRepository — the storage interface
-      in_memory_chat_repository.py  InMemoryChatRepository — in-memory impl
+  main.py                  FastAPI app, lifespan, router wiring
+  bootstrap.py             Dependencies, build_dependencies, load_bots_from_config, TelegramReceiveRuntime
+  models.py                Shared API DTOs (Message, ConversationSummary, …)
+  connection_manager.py    WebSocket client registry + broadcast
+  logging_setup.py         Token redaction in httpx logs
+  config/
+    settings.py            Settings from .env
+    bots.py                Loads app/config/bots/*.json
+    bots/                  Per-bot token + max_active_chats (gitignored *.json)
+  domain/
+    bot/
+      bot_service.py       Bot registry (tokens separate from BotRecord)
+      record.py            BotRecord, BotInboxItem
+      repository/          BotRepository + in-memory impl
+    chat/
+      chat_service.py      Message processing (scoped per bot)
+      repository/          ChatRepository + in-memory impl
+  messaging_providers/
+    telegram/              Telegram I/O: api, gateway, service (parser), poller
+  middleware/
+    telegram_auth.py       Webhook secret validation
+  routes/
+    api.py                 REST + WebSocket
+    webhook.py             POST /telegram/webhook/{token}
 ```
+
+## Handler / API layer
+
+The HTTP surface is a thin adapter: route handlers validate input, map domain
+exceptions to HTTP status codes, and delegate to `BotService` / `ChatService`.
+They should not contain business rules — those live in the domain.
+
+**Current layout (kept intentionally small):**
+
+| Module | Responsibility |
+|---|---|
+| `routes/api.py` | Agent-facing REST + WebSocket: health, reset, bots, conversations, messages, `/ws` |
+| `routes/webhook.py` | Telegram ingress only — separate router with its own auth middleware |
+
+All agent routes live in one `register_routes(deps)` function (~85 lines). That is
+enough for the current assignment scope: every handler is a short delegation, and
+the file is readable top-to-bottom.
+
+**Why `webhook.py` is already split:** different transport, path prefix, and
+middleware (`telegram_authentication`). That split is about **entrypoint concerns**,
+not domain package names.
+
+**Why the rest is not split yet:** at ~85 lines the single module is still easy
+to follow. When the route layer grows, the intended split is **by domain** so each
+router mirrors `domain/bot` and `domain/chat`.
+
+### Future scaling — split by domain
+
+When the route layer grows (auth, admin endpoints, metrics, API versioning,
+separate route tests), split **`routes/api.py`** into domain-aligned routers:
+
+```
+routes/
+  bot_routes.py       GET /bots  → BotService (+ inbox enrichment)
+  chat_routes.py      prefix /bots/{username} → conversations + messages, POST /reset
+  infra_routes.py     GET /health, WS /ws  (app wiring, not bot/chat domain)
+  __init__.py         compose via register_routes(deps)
+  webhook.py          (unchanged — Telegram ingress, not agent API)
+```
+
+Each domain router delegates only to its matching service (`BotService`,
+`ChatService`). Handlers stay thin: validate input, map exceptions to HTTP,
+call the domain.
+
+**Cross-domain note:** `GET /bots` enriches each bot with `active_chats` from
+`ChatService`. When splitting by domain, move that orchestration into the bot
+domain (e.g. `BotService.list_inbox_items()`) so `bot_routes.py` does not depend
+on `ChatService` directly.
+
+**Do not merge** `webhook.py` into the agent API routers — Telegram ingress
+stays isolated with its own path prefix and auth middleware.
 
 Dependency direction is one-way:
 
@@ -87,12 +150,13 @@ back-office human, replying as the bot (outgoing — what we produce today);
 
 | Channel | Endpoint | Payload |
 |---|---|---|
-| List conversations | `GET /conversations` | → `[{ chat_id }]` |
-| Load history | `GET /messages?chat_id=<id>` | → array of messages (ordered by timestamp) |
-| Send | `POST /messages` | `{ id, chat_id, text, timestamp }` → the stored message (`409` if `chat_id` not active) |
-| Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, chat_id, status}` / `{type:"reset"}` |
-| Telegram in | `POST /telegram/webhook` | raw Telegram update (webhook mode) |
-| Admin reset | `POST /admin/reset` | clears all conversations (dev/admin) |
+| List bots | `GET /bots` | → `[{ bot_id, bot_name, username, max_chats, active_chats, private }]` |
+| List conversations | `GET /bots/{username}/conversations` | → conversation summaries |
+| Load history | `GET /bots/{username}/messages?chat_id=<id>` | → array of messages |
+| Send | `POST /bots/{username}/messages` | `{ id, chat_id, text, timestamp }` → stored message |
+| Server push | WebSocket `/ws` | `{type:"message", bot_username, chat_id, …}` / `{type:"receipt", …}` / `{type:"reset"}` |
+| Telegram in | `POST /telegram/webhook/{token}` | raw Telegram update (webhook mode) |
+| Reset | `POST /reset` | clears all conversations (dev) |
 
 The server is the **authority** on `sender`/`status`: `POST /messages` only
 trusts `id`/`chat_id`/`text`/`timestamp`; it forces `sender="agent"` and drives
@@ -146,7 +210,7 @@ so switching modes changes only how raw updates are obtained.
 
 ## Concurrency & resilience
 
-- All shared-state mutation goes through `ChatStore`'s `asyncio.Lock`.
+- All shared-state mutation goes through repository `asyncio.Lock`s.
 - The poll loop backs off on errors (e.g. a 409 Conflict when another instance
   is polling the same bot) instead of hammering the API.
 - `httpx` request logging is filtered to redact the bot token, so the live
@@ -154,22 +218,22 @@ so switching modes changes only how raw updates are obtained.
 
 ## Configuration
 
-Settings are layered: the shared `.env` (webhook / production defaults) plus
-`.env.development` when `ENVIRONMENT=development` (polling overrides). Real
-environment variables override both. All `.env*` are gitignored; `*.example`
-templates are committed.
+Settings are layered: `.env` at the repo root plus `.env.development` when
+`ENVIRONMENT=development`. Bot tokens live in `backend/app/config/bots/*.json`
+(one file per bot). Real environment variables override `.env` files.
 
 ```
-.env                 # production — TELEGRAM_MODE=webhook + webhook URL/secret
-.env.development     # ENVIRONMENT=development — TELEGRAM_MODE=poll (overrides .env)
+.env                              # TELEGRAM_MODE, webhook URL, CORS, …
+.env.development                  # ENVIRONMENT=development — polling overrides
+backend/app/config/bots/*.json    # per-bot token + max_active_chats
+backend/app/config/bots/example.json.example
 ```
 
-Variables:
-- `TELEGRAM_BOT_TOKEN` — from BotFather (required for live use).
+Variables (`.env`):
+- `DEFAULT_MAX_ACTIVE_CHATS` — default when a bot JSON omits `max_active_chats`.
 - `TELEGRAM_MODE` — `webhook` | `poll` | `mock`.
-- `TELEGRAM_API_BASE` — Telegram Bot API base URL (default `https://api.telegram.org`).
-- `TELEGRAM_WEBHOOK_URL` / `TELEGRAM_WEBHOOK_PATH` — webhook mode only.
-- `MAX_ACTIVE_CHATS` — max simultaneous conversations (default `1`).
+- `TELEGRAM_API_BASE`, `TELEGRAM_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_PATH`, `TELEGRAM_WEBHOOK_SECRET`.
+- `CORS_ALLOWED_ORIGINS`.
 
 ## Run
 
@@ -197,5 +261,5 @@ TELEGRAM_MODE=mock uvicorn app.main:app --reload           # no bot (overrides m
 - **Agent must connect first** — incoming messages are rejected when no agent is
   connected, and dropped (not queued). "Deliver on next connect" would be a
   store-buffering change, not a policy change.
-- **`/admin/reset` is unauthenticated** — it's a dev/test affordance; a real
+- **`POST /reset` is unauthenticated** — it's a dev/test affordance; a real
   deployment would put auth in front of it (or omit it).

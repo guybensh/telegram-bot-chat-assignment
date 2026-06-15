@@ -110,7 +110,7 @@ to the no-chat state.
 | Load history | `GET /messages?chat_id=<id>` | → array of messages |
 | Send | `POST /messages` | `{ id, chat_id, text, timestamp }` → the stored message |
 | Server push | WebSocket `/ws` | `{type:"message", ...}` / `{type:"receipt", message_id, chat_id, status}` / `{type:"reset"}` |
-| Admin reset | `POST /admin/reset` | clears all conversations (dev/admin) |
+| Reset | `POST /reset` | clears all conversations (dev) |
 
 The WebSocket is a general server-push channel — new event types are just
 another `case` in `useChat`'s handler, no transport changes.

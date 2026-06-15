@@ -48,7 +48,8 @@ State management, concurrency handling, and message ordering should be handled s
 
 ### 3. Backend Configuration State
 
-- The Telegram bot token should be configured manualy in the backend.
+- Each Telegram bot is configured in a JSON file under `backend/app/config/bots/`.
+- General app settings (Telegram mode, webhook URL, CORS, etc.) live in `.env` at the repo root.
 
 ---
 
@@ -102,13 +103,20 @@ Real shell environment variables override both files.
 
 | Variable | Description |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather (required for live Telegram) |
+| `DEFAULT_MAX_ACTIVE_CHATS` | Default max conversations per bot when omitted from its JSON file |
 | `TELEGRAM_MODE` | `webhook` \| `poll` \| `mock` |
 | `TELEGRAM_API_BASE` | Telegram API base URL (default `https://api.telegram.org`) |
-| `MAX_ACTIVE_CHATS` | Max simultaneous conversations (default `1`) |
 | `TELEGRAM_WEBHOOK_URL` | Public HTTPS base for webhook mode (e.g. ngrok URL) |
 | `TELEGRAM_WEBHOOK_PATH` | Webhook route prefix (default `/telegram/webhook`; bot token is appended) |
 | `TELEGRAM_WEBHOOK_SECRET` | Optional shared secret validated on inbound webhooks |
+| `CORS_ALLOWED_ORIGINS` | Allowed frontend origins (comma-separated) |
+
+**Per-bot config** — copy the template and add one JSON file per bot:
+
+```bash
+cp backend/app/config/bots/example.json.example backend/app/config/bots/my_bot.json
+# edit my_bot.json: set "token" and optional "max_active_chats"
+```
 
 **Frontend variables** (Vite — set inline or in `frontend/.env.local`):
 
@@ -136,10 +144,10 @@ Run from `backend/` — the app loads `.env` from the repo root automatically.
 | **Polling** | `ENVIRONMENT=development uvicorn app.main:app --reload` | Local dev — no public URL needed; uses `.env.development` |
 | **Mock** | `TELEGRAM_MODE=mock uvicorn app.main:app --reload` | Backend runs with no live Telegram bot |
 
-Webhook mode registers Telegram to:
+Webhook mode registers each bot to:
 
 ```text
-{TELEGRAM_WEBHOOK_URL}{TELEGRAM_WEBHOOK_PATH}/{TELEGRAM_BOT_TOKEN}
+{TELEGRAM_WEBHOOK_URL}{TELEGRAM_WEBHOOK_PATH}/{bot_token}
 ```
 
 Health check: [http://localhost:8000/health](http://localhost:8000/health)
@@ -190,10 +198,11 @@ cd frontend && npm run dev:mock
 
 If `docker-compose.yml` is present, you can run the full stack in containers:
 
-1. **Configure the bot token:**
+1. **Configure bots:**
    ```bash
    cp .env.example .env
-   # then edit .env and set TELEGRAM_BOT_TOKEN
+   cp backend/app/config/bots/example.json.example backend/app/config/bots/bot.json
+   # edit .env and backend/app/config/bots/bot.json
    ```
 
 2. **Build and start the containers:**

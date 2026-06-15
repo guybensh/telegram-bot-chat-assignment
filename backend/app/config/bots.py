@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class BotConfigFile(BaseModel):
-    """Per-bot settings loaded from a JSON file in backend/config/bots/."""
+    """Per-bot settings loaded from app/config/bots/*.json."""
 
     token: str
     max_active_chats: int | None = None
@@ -24,22 +24,17 @@ class BotConfigEntry:
     source: str
 
 
-def _backend_root() -> Path:
-    # backend/config/bots.py -> backend/
-    return Path(__file__).resolve().parents[1]
-
-
 def resolve_bots_config_dir() -> Path:
-    """Return backend/config/bots/."""
-    return (_backend_root() / "config" / "bots").resolve()
+    """Return app/config/bots/."""
+    return (Path(__file__).resolve().parent / "bots").resolve()
 
 
 def load_bot_config_entries(settings: Settings) -> list[BotConfigEntry]:
-    """Load every *.json bot config file from backend/config/bots/."""
+    """Load every *.json bot config file from app/config/bots/."""
     config_dir = resolve_bots_config_dir()
     if not config_dir.is_dir():
         logger.warning(
-            "Bots config directory %s not found — add JSON files under backend/config/bots/",
+            "Bots config directory %s not found — add JSON files under app/config/bots/",
             config_dir,
         )
         return []

@@ -1,5 +1,5 @@
-from config import Settings
-from ...messaging_providers.telegram import TelegramGateway
+from ...config import Settings
+from ...messaging_providers import MessageProvider
 from .record import BotRecord
 from .repository import BotRepository
 
@@ -9,7 +9,7 @@ class BotNotFoundError(Exception):
 
 
 class BotRegistrationError(Exception):
-    """Raised when a token cannot be resolved via Telegram getMe."""
+    """Raised when provider credentials cannot be resolved into a bot profile."""
 
 
 class BotService:
@@ -22,10 +22,13 @@ class BotService:
     async def list_bots(self) -> list[BotRecord]:
         return await self._repository.list()
 
-    async def get_record(self, username: str) -> BotRecord:
-        return await self._require_by_username(username)
+    async def get_by_username(self, username: str) -> BotRecord:
+        record = await self._repository.get_by_username(username)
+        if record is None:
+            raise BotNotFoundError(username)
+        return record
 
-    async def get_record_by_id(self, bot_id: int) -> BotRecord:
+    async def get_by_id(self, bot_id: int) -> BotRecord:
         record = await self._repository.get_by_id(bot_id)
         if record is None:
             raise BotNotFoundError(str(bot_id))
@@ -38,35 +41,33 @@ class BotService:
         return record
 
     async def get_token(self, username: str) -> str:
-        record = await self._require_by_username(username)
+        record = await self.get_by_username(username)
         token = await self._repository.get_token(record.bot_id)
         if token is None:
             raise BotNotFoundError(username)
         return token
 
-    async def register_from_token(
+    async def register(
         self,
-        token: str,
-        gateway: TelegramGateway,
+        credentials: str,
+        provider: MessageProvider,
         *,
         max_chats: int | None = None,
     ) -> BotRecord:
-        """Resolve bot metadata via getMe and persist profile + token."""
-        me = await gateway.get_me(token)
-        if not me:
-            raise BotRegistrationError("getMe failed — check the bot token")
+        """Resolve bot metadata via the message provider and persist profile + credentials."""
+        profile = await provider.resolve_bot(credentials)
+        if profile is None:
+            raise BotRegistrationError("Provider could not resolve bot credentials")
 
-        bot_id = me["id"]
-        username = me.get("username") or f"bot{bot_id}"
         record = BotRecord(
-            bot_id=bot_id,
-            bot_name=me.get("first_name", "Telegram Bot"),
-            username=username,
+            bot_id=profile.bot_id,
+            bot_name=profile.name,
+            username=profile.username,
             max_chats=max_chats
             if max_chats is not None
             else self._settings.default_max_active_chats,
         )
-        return await self._repository.create(record, token)
+        return await self._repository.create(record, credentials)
 
     async def register_mock(self, *, max_chats: int | None = None) -> BotRecord:
         return await self._repository.create(
@@ -80,9 +81,3 @@ class BotService:
             ),
             "mock-token",
         )
-
-    async def _require_by_username(self, username: str) -> BotRecord:
-        record = await self._repository.get_by_username(username)
-        if record is None:
-            raise BotNotFoundError(username)
-        return record
