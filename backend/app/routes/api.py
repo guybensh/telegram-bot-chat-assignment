@@ -5,7 +5,7 @@ from ..domain.bot.record import BotInboxItem
 from ..domain.chat import NoActiveConversationError
 from ..bootstrap import AppContext
 from ..models import (
-    ConversationSummary,
+    ChatSummary,
     MarkThreadReadRequest,
     MarkThreadReadResponse,
     Message,
@@ -43,16 +43,19 @@ def app_router(deps: AppContext) -> APIRouter:
         return items
 
     @router.get(
-        "/bots/{username}/conversations",
-        response_model=list[ConversationSummary],
+        "/bots/{username}/chat-summaries",
+        response_model=list[ChatSummary],
     )
-    async def get_bot_conversations(username: str):
+    async def get_chat_summaries(username: str):
         try:
-            return await deps.chat_service.list_conversation_summaries(username)
+            return await deps.chat_service.list_chat_summaries(username)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
-    @router.get("/bots/{username}/messages", response_model=list[Message])
+    @router.get(
+        "/bots/{username}/chats/{chat_id}/messages",
+        response_model=list[Message],
+    )
     async def get_messages(username: str, chat_id: str):
         try:
             return await deps.chat_service.list_messages(username, chat_id)

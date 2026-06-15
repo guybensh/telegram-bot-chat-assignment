@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer } from "react";
 import { WS_URL } from "../config";
 import {
   fetchBots,
-  fetchHistory,
+  fetchMessages,
   markMessagesRead,
   resetChat,
   sendMessage,
@@ -111,7 +111,7 @@ export function useInbox(botUsername, chatId) {
 
     const key = threadKey(botUsername, chatId);
     let cancelled = false;
-    fetchHistory(botUsername, chatId)
+    fetchMessages(botUsername, chatId)
       .then((history) => {
         if (cancelled) return;
         dispatch({

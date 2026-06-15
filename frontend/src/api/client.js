@@ -12,14 +12,14 @@ export async function fetchBots() {
 }
 
 /**
- * List active conversations for one bot, with preview metadata for the inbox.
+ * List active chat summaries for one bot (inbox preview rows).
  */
-export async function fetchBotConversations(botUsername) {
+export async function fetchChatSummaries(botUsername) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/conversations`
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chat-summaries`
   );
   if (!res.ok) {
-    throw new Error(`Failed to load conversations (${res.status})`);
+    throw new Error(`Failed to load chat summaries (${res.status})`);
   }
   return res.json();
 }
@@ -38,9 +38,9 @@ export async function resetChat() {
 /**
  * Load one conversation's message history, in server-defined order.
  */
-export async function fetchHistory(botUsername, chatId) {
+export async function fetchMessages(botUsername, chatId) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages?chat_id=${chatId}`
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages`
   );
   if (!res.ok) {
     throw new Error(`Failed to load history (${res.status})`);

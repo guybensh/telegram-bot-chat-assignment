@@ -22,7 +22,7 @@ src/
   App.jsx                   Router: /, /bots/:botUsername, /bots/:botUsername/chats/:chatId
   config.js                 API_URL, WS_URL (from VITE_* env)
   api/
-    client.js               REST: fetchBots, fetchBotConversations, fetchHistory, sendMessage, resetChat
+    client.js               REST: fetchBots, fetchChatSummaries, fetchMessages, sendMessage, resetChat
   hooks/
     useWebSocket.js         Generic self-healing WebSocket (reconnect / backoff)
     useInbox.js             Thin orchestrator: useReducer, effects, send/reset, WS dispatch
@@ -111,14 +111,15 @@ npm run build      # production build
 
 - **Session-scoped, no client persistence.** History is loaded when a thread is
   opened; the brief allows the chat to show only the current session. A DB added
-  server-side would surface through the same `GET /bots/{username}/messages`
+  server-side would surface through the same
+  `GET /bots/{username}/chats/{chat_id}/messages`
   call.
 - **Bot cannot initiate a conversation ("no chat yet").** A Telegram bot only
   learns a `chat_id` after the remote user messages it — the agent cannot pick
   an arbitrary id and start chatting. The UI reflects this: send is enabled only
   when a conversation is selected in the URL (`canSend = chatId != null`). Until
   then the composer is disabled with *"Waiting for a user to start the chat…"*.
-  New threads appear when `GET /bots/{username}/conversations` returns them
+  New threads appear when `GET /bots/{username}/chat-summaries` returns them
   (e.g. after the user messaged while the inbox was closed) or when a live
   WebSocket `message` arrives. There is no flow to message an unknown `chat_id`.
 - **Client-generated ids.** Chosen for race-free correlation across the
@@ -133,7 +134,7 @@ numbers are derived client-side today: count user messages with `read_at == null
 in `messagesByThread`.
 
 Because conversation summaries do not include `read_at`, the client **prefetches
-full history** for every active thread when bots/conversations load
+full history** for every active thread when bots/chat-summaries load
 (`inbox/prefetch.js`). Capacity labels (`active_chats` / `max_chats`) already
 come from `GET /bots` and do not depend on prefetch.
 
@@ -141,7 +142,7 @@ See the full comparison in [`backend.md`](./backend.md#unread-badges-prefetch-vs
 
 | Approach | Pros | Cons |
 |---|---|---|
-| **Prefetch (today)** | No extra API fields; reuses `GET /messages`; stays in sync with `read_at` | `1 + N` requests and full message payloads on inbox open |
+| **Prefetch (today)** | No extra API fields; reuses `GET /bots/{username}/chat-summaries` and `GET /bots/{username}/chats/{chat_id}/messages`; stays in sync with `read_at` | `1 + N` requests and full message payloads on inbox open |
 | **Server `unread_count` (planned)** | List endpoints return counts; badges work immediately; load only the open thread | Server must compute or maintain counts on store/read |
 
 ## Working locally

@@ -1,4 +1,4 @@
-import { fetchBotConversations, fetchHistory } from "../api/client";
+import { fetchChatSummaries, fetchMessages } from "../api/client";
 import { threadKey } from "./keys";
 
 /**
@@ -6,7 +6,7 @@ import { threadKey } from "./keys";
  * Does not mark messages read — that happens only when the agent opens a thread.
  */
 export async function prefetchBotThreadHistories(botUsername, dispatch) {
-  const conversations = await fetchBotConversations(botUsername);
+  const conversations = await fetchChatSummaries(botUsername);
   dispatch({
     type: "CONVERSATIONS_LOADED",
     botUsername,
@@ -15,7 +15,7 @@ export async function prefetchBotThreadHistories(botUsername, dispatch) {
 
   await Promise.all(
     conversations.map(async (conversation) => {
-      const history = await fetchHistory(botUsername, conversation.chat_id);
+      const history = await fetchMessages(botUsername, conversation.chat_id);
       dispatch({
         type: "THREAD_HISTORY_LOADED",
         threadKey: threadKey(botUsername, conversation.chat_id),

@@ -44,8 +44,8 @@ class Message(BaseModel):
     read_at: datetime | None = None
 
 
-class ConversationSummary(BaseModel):
-    """Lightweight row for the inbox conversation list."""
+class ChatSummary(BaseModel):
+    """Lightweight row for the inbox chat list."""
 
     chat_id: str
     bot_id: str

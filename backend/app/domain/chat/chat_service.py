@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from ..bot import BotNotFoundError, BotService
 from ...connection_manager import ConnectionManager
-from ...models import ConversationSummary, Message, Sender, Status
+from ...models import ChatSummary, Message, Sender, Status
 from ...messaging_providers import IncomingMessage, MessageProvider
 from .repository import ChatRepository
 
@@ -31,16 +31,16 @@ class ChatService:
         self._messaging_provider = messaging
         self._bot_service = bot_service
 
-    async def list_conversation_summaries(
+    async def list_chat_summaries(
         self, username: str
-    ) -> list[ConversationSummary]:
+    ) -> list[ChatSummary]:
         bot = await self._bot_service.get_by_username(username)
-        summaries: list[ConversationSummary] = []
+        summaries: list[ChatSummary] = []
         for chat_id in await self._repository.list_active_chats(bot.bot_id):
             messages = await self._repository.get_conversation(bot.bot_id, chat_id)
             last = messages[-1] if messages else None
             summaries.append(
-                ConversationSummary(
+                ChatSummary(
                     chat_id=chat_id,
                     bot_id=bot.bot_id,
                     bot_username=bot.username,

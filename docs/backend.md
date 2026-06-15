@@ -36,7 +36,7 @@ or domain orchestration code.
 backend/app/
   main.py                  FastAPI app, lifespan, CORS, router + listener wiring
   bootstrap.py             AppContext, build_app_context, load_bots_from_config
-  models.py                Shared API DTOs (Message, ConversationSummary, …)
+  models.py                Shared API DTOs (Message, ChatSummary, …)
   connection_manager.py    WebSocket client registry + broadcast
   logging_setup.py         Token redaction in httpx logs
   config/
@@ -93,7 +93,7 @@ When the route layer grows (auth, admin endpoints, metrics, API versioning), spl
 ```
 routes/
   bot_routes.py       GET /bots  → BotService (+ inbox enrichment)
-  chat_routes.py      prefix /bots/{username} → conversations + messages, POST /reset
+  chat_routes.py      prefix /bots/{username} → chat-summaries + messages, POST /reset
   infra_routes.py     GET /health, WS /ws  (app wiring, not bot/chat domain)
   __init__.py         compose via app_router(deps) + webhook_router(deps)
   webhook.py          (unchanged — Telegram ingress, not agent API)
@@ -109,8 +109,8 @@ call the domain.
 | Channel | Endpoint | Payload |
 |---|---|---|
 | List bots | `GET /bots` | → `[BotInboxItem]` |
-| List conversations | `GET /bots/{username}/conversations` | → `[ConversationSummary]` |
-| Load history | `GET /bots/{username}/messages?chat_id=<id>` | → `[Message]` (includes `read_at`) |
+| List chat summaries | `GET /bots/{username}/chat-summaries` | → `[ChatSummary]` |
+| Load history | `GET /bots/{username}/chats/{chat_id}/messages` | → `[Message]` (includes `read_at`) |
 | Send | `POST /bots/{username}/chats/{chat_id}/messages` | `SendMessageRequest` → `Message` |
 | Mark read | `POST /bots/{username}/chats/{chat_id}/messages/read` | `{ read_at }` → `{ chat_id, read_at, marked_count }` |
 | Server push | WebSocket `/ws` | `{type:"message", bot_username, …Message fields}` / `{type:"receipt", message_id, chat_id, bot_username, status}` / `{type:"reset"}` |
@@ -132,8 +132,8 @@ call the domain.
 - **`BotService` (domain)** — bot registry: register bots from config, resolve
   by id or username.
 - **`ChatService` (domain)** — the single place that decides message processing:
-  `send_message(...)`, `handle_incoming_message(...)`, `get_history(...)`,
-  `list_conversation_summaries(...)`, `reset()`. Coordinates the repository,
+  `send_message(...)`, `handle_incoming_message(...)`, `list_messages(...)`,
+  `list_chat_summaries(...)`, `reset()`. Coordinates the repository,
   connection manager, and message provider.
 - **`ChatRepository` / `BotRepository`** — storage interfaces the domain
   depends on. Easy replacable storage type — no domain changes.
@@ -144,7 +144,7 @@ call the domain.
 
 Defined in `models.py`. The same `Message` shape is used all around the system — the frontend can treat
 them interchangeably.
-
+ 
 ### `Message`
 
 ```json
@@ -234,7 +234,8 @@ incoming user message in the inbox.
 5. **Broadcast only if an agent is connected** (`ConnectionManager.has_clients()`)
    — push `{type:"message"}` (with `bot_username` and message fields). If no
    client is connected, the message remains stored; the agent loads it later via
-   `GET /bots/{username}/conversations` and `GET /bots/{username}/messages`.
+   `GET /bots/{username}/chat-summaries` and
+   `GET /bots/{username}/chats/{chat_id}/messages`.
 
 ## Single-active-chat (a policy, not a limit)
 
@@ -322,8 +323,8 @@ loading messages. **Unread** is separate: the rule is
 
 | Approach | How it works | Trade-off |
 |---|---|---|
-| **Prefetch (current)** | Client calls `GET /messages` for every active thread after loading bots/conversations; frontend counts `read_at` in `messagesByThread` | Simple — no new list fields; correct whenever histories are loaded. Costly on inbox open (`1 + N` requests, full text for all threads). |
-| **Server `unread_count` (recommended next)** | Add `unread_count` to `ConversationSummary` and optionally `BotInboxItem`; maintain or query on store/mark-read | Badges on app open with one list request; prefetch only the thread the agent opens. Extra server logic (count on insert + mark-read, or aggregate query). |
+| **Prefetch (current)** | Client calls `GET /bots/{username}/chat-summaries` then `GET /bots/{username}/chats/{chat_id}/messages` for every active thread; frontend counts `read_at` in `messagesByThread` | Simple — no new list fields; correct whenever histories are loaded. Costly on inbox open (`1 + N` requests, full text for all threads). |
+| **Server `unread_count` (recommended next)** | Add `unread_count` to `ChatSummary` and optionally `BotInboxItem`; maintain or query on store/mark-read | Badges on app open with one list request; prefetch only the thread the agent opens. Extra server logic (count on insert + mark-read, or aggregate query). |
 
 We use **prefetch today** for a small assignment scope. **`unread_count` on list
 endpoints** is the better long-term fit when chat volume or history length grows.
