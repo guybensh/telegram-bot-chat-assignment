@@ -22,8 +22,8 @@ export const mockBots = [
   },
 ];
 
-export const MOCK_CHAT_ID = 424242;
-export const MOCK_CHAT_ID_2 = 515151;
+export const MOCK_CHAT_ID = "424242";
+export const MOCK_CHAT_ID_2 = "515151";
 
 export const mockConversations = [
   {

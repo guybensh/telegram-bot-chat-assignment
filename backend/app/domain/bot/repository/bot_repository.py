@@ -4,7 +4,7 @@ from ..record import BotRecord
 
 
 class BotRepository(ABC):
-    """Data-access layer for bot profiles and their Telegram tokens."""
+    """Data-access layer for bot profiles."""
 
     @abstractmethod
     async def list(self) -> list[BotRecord]:
@@ -19,13 +19,5 @@ class BotRepository(ABC):
         """Lookup by @username (without the @)."""
 
     @abstractmethod
-    async def get_by_token(self, token: str) -> BotRecord | None:
-        """Lookup by BotFather token — used by the webhook route."""
-
-    @abstractmethod
-    async def get_token(self, bot_id: int) -> str | None:
-        """Return the API token for a registered bot."""
-
-    @abstractmethod
-    async def create(self, record: BotRecord, token: str) -> BotRecord:
-        """Insert or replace a bot and its token."""
+    async def create(self, record: BotRecord) -> BotRecord:
+        """Insert or replace a bot profile."""

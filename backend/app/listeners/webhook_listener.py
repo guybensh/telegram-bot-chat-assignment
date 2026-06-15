@@ -17,22 +17,26 @@ class WebhookListener(MessageListener):
 
     async def start(self, app_context: AppContext, bots: list[BotRecord]) -> None:
         if not bots:
-            logger.warning("No bots registered — webhook registration skipped")
+            logger.warning(
+                "[WebhookListener::start]: No bots registered — webhook registration skipped"
+            )
             return
 
         settings = app_context.settings
         secret = settings.telegram_webhook_secret or None
         for bot in bots:
-            token = await app_context.bot_service.get_token(bot.username)
             url = generate_telegram_webhook_url(
                 public_base_url=settings.telegram_webhook_url,
                 webhook_path=settings.telegram_webhook_path,
-                bot_token=token,
+                bot_id=bot.bot_id,
             )
-            ok = await self._provider.set_webhook(token, url, secret)
-            safe_url = url.replace(token, "<token>")
+            ok = await self._provider.set_webhook(bot.bot_id, url, secret)
             logger.info(
-                "Webhook set for @%s (%s) -> ok=%s", bot.username, safe_url, ok
+                "[WebhookListener::start]: Webhook set for @%s (bot_id=%s) -> %s (ok=%s)",
+                bot.username,
+                bot.bot_id,
+                url,
+                ok,
             )
 
     async def stop(self) -> None:

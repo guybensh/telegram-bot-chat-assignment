@@ -60,7 +60,7 @@ class ChatService:
     async def count_active_chats(self, bot_id: int) -> int:
         return len(await self._repository.active_chats(bot_id))
 
-    async def get_history(self, username: str, chat_id: int) -> list[Message]:
+    async def get_history(self, username: str, chat_id: str) -> list[Message]:
         bot = await self._bot_service.get_by_username(username)
         return await self._repository.get_conversation(bot.bot_id, chat_id)
 
@@ -72,7 +72,7 @@ class ChatService:
         self,
         username: str,
         message_id: str,
-        chat_id: int,
+        chat_id: str,
         text: str,
         timestamp: datetime,
     ) -> Message:
@@ -90,8 +90,7 @@ class ChatService:
         if stored is None:
             raise NoActiveConversationError(chat_id)
 
-        credentials = await self._bot_service.get_token(username)
-        delivered = await self._messaging.send_text(credentials, chat_id, text)
+        delivered = await self._messaging.send_message(bot.bot_id, chat_id, text)
         status = Status.SENT if delivered else Status.FAILED
 
         await self._repository.update_message_status(
@@ -99,7 +98,7 @@ class ChatService:
         )
         message.status = status
         logger.info(
-            "Outgoing [bot %s chat %s] %r -> %s",
+            "[ChatService::send_message]: Outgoing [bot %s chat %s] %r -> %s",
             bot.username,
             chat_id,
             text[:200],
@@ -122,7 +121,7 @@ class ChatService:
     ) -> None:
         if not await self._connection_manager.has_clients():
             logger.info(
-                "No agent connected; rejecting incoming from chat %s",
+                "[ChatService::handle_incoming]: No agent connected; rejecting incoming from chat %s",
                 incoming.chat_id,
             )
             return
@@ -130,7 +129,10 @@ class ChatService:
         try:
             bot = await self._bot_service.get_by_id(bot_id)
         except BotNotFoundError:
-            logger.warning("Incoming for unknown bot_id %s; ignoring", bot_id)
+            logger.warning(
+                "[ChatService::handle_incoming]: Incoming for unknown bot_id %s; ignoring",
+                bot_id,
+            )
             return
 
         message = Message(
@@ -146,7 +148,7 @@ class ChatService:
             bot.bot_id, incoming.chat_id, bot.max_chats
         ):
             logger.info(
-                "At active-chat capacity for bot %s; ignoring chat %s",
+                "[ChatService::handle_incoming]: At active-chat capacity for bot %s; ignoring chat %s",
                 bot.username,
                 incoming.chat_id,
             )
@@ -158,7 +160,7 @@ class ChatService:
         if stored is None:
             return
         logger.info(
-            "Incoming [bot %s chat %s] %r",
+            "[ChatService::handle_incoming]: Incoming [bot %s chat %s] %r",
             bot.username,
             incoming.chat_id,
             incoming.text[:200],

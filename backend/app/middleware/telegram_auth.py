@@ -12,8 +12,8 @@ from ..domain.bot import BotNotFoundError
 logger = logging.getLogger(__name__)
 
 
-def expected_webhook_path(webhook_path: str, bot_token: str) -> str:
-    return f"{webhook_path.rstrip('/')}/{bot_token}"
+def expected_webhook_path(webhook_path: str, bot_id: int) -> str:
+    return f"{webhook_path.rstrip('/')}/{bot_id}"
 
 
 def _request_host(request: Request) -> str:
@@ -40,24 +40,30 @@ def build_telegram_authentication(
 
     async def telegram_authentication(
         request: Request,
-        bot_token: str,
+        bot_id: int,
         settings: Settings = Depends(get_settings),
         x_telegram_bot_api_secret_token: str | None = Header(default=None),
     ) -> None:
         if request.url.path != expected_webhook_path(
-            settings.telegram_webhook_path, bot_token
+            settings.telegram_webhook_path, bot_id
         ):
-            logger.warning("Blocked webhook request with unexpected URL: %s", request.url)
+            logger.warning(
+                "[TelegramAuth::telegram_authentication]: Blocked webhook request with unexpected URL: %s",
+                request.url,
+            )
             raise HTTPException(status_code=403, detail="Forbidden")
 
         if not _matches_webhook_host(request, settings):
-            logger.warning("Blocked webhook request with unexpected host: %s", request.url)
+            logger.warning(
+                "[TelegramAuth::telegram_authentication]: Blocked webhook request with unexpected host: %s",
+                request.url,
+            )
             raise HTTPException(status_code=403, detail="Forbidden")
 
         try:
-            await app_context.bot_service.get_record_by_token(bot_token)
+            await app_context.bot_service.get_by_id(bot_id)
         except BotNotFoundError:
-            raise HTTPException(status_code=403, detail="Invalid bot token")
+            raise HTTPException(status_code=403, detail="Invalid bot")
 
         if settings.telegram_webhook_secret:
             if x_telegram_bot_api_secret_token != settings.telegram_webhook_secret:

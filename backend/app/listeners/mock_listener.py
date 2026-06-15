@@ -20,13 +20,13 @@ class MockListener(MessageListener):
         if not bots:
             return
         bot = bots[0]
-        token = await app_context.bot_service.get_token(bot.username)
-        logger.info("Mock mode: simulated incoming message every 10s")
+        logger.info(
+            "[MockListener::start]: Mock mode: simulated incoming message every 10s"
+        )
         self._poller = TelegramPoller(
             self._provider,
             app_context.chat_service,
             bot_id=bot.bot_id,
-            token=token,
         )
         await self._poller.start_mock_feed()
 

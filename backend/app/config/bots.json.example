@@ -1,0 +1,9 @@
+{
+  "bots": [
+    {
+      "bot_id": 123456789,
+      "token": "123456789:AAH-your-botfather-token-here",
+      "max_active_chats": 10
+    }
+  ]
+}
