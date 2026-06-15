@@ -49,15 +49,33 @@ export async function fetchHistory(botUsername, chatId) {
 }
 
 /**
- * Forward an outgoing message to the connected Telegram chat.
+ * Mark user messages in a thread as read up to `read_at`.
  */
-export async function sendMessage(botUsername, message) {
+export async function markMessagesRead(botUsername, chatId, readAt) {
   const res = await fetch(
-    `${API_URL}/bots/${encodeURIComponent(botUsername)}/messages`,
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages/read`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message),
+      body: JSON.stringify({ read_at: readAt }),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Mark read failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Forward an outgoing message to the connected Telegram chat.
+ */
+export async function sendMessage(botUsername, chatId, { id, text, timestamp }) {
+  const res = await fetch(
+    `${API_URL}/bots/${encodeURIComponent(botUsername)}/chats/${encodeURIComponent(chatId)}/messages`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, text, timestamp }),
     }
   );
   if (!res.ok) {

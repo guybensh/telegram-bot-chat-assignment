@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from ....models import Message, Status
 
@@ -40,6 +41,13 @@ class ChatRepository(ABC):
     @abstractmethod
     async def get_conversation(self, bot_id: str, chat_id: str) -> list[Message]:
         """A conversation's messages, ordered by timestamp."""
+
+    @abstractmethod
+    async def mark_message_read(
+        self, bot_id: str, chat_id: str, read_at: datetime
+    ) -> int:
+        """Set `read_at` on user messages in the thread up to `read_at`. Returns
+        how many messages were updated."""
 
     @abstractmethod
     async def delete(self) -> None:

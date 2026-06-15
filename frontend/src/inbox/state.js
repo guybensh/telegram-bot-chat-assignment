@@ -9,8 +9,6 @@ export const emptyInboxState = () => ({
   bots: [],
   conversationsByBot: {},
   messagesByThread: {},
-  unreadByChatId: {},
-  unreadByBotUsername: {},
 });
 
 export function createInitialInboxState(botUsername) {
@@ -21,7 +19,5 @@ export function createInitialInboxState(botUsername) {
       ? { [botUsername]: mockConversationsForBot(botUsername) }
       : {},
     messagesByThread: buildMockMessagesByThread(),
-    unreadByChatId: {},
-    unreadByBotUsername: {},
   };
 }

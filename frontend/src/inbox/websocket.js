@@ -1,7 +1,6 @@
 import { upsertConversationList } from "./conversations";
 import { threadKey } from "./keys";
 import { appendToThread, updateMessageStatus } from "./messages";
-import { bumpUnread } from "./unread";
 import { emptyInboxState } from "./state";
 
 function upsertConversationsForBot(state, botUsername, event) {
@@ -18,18 +17,9 @@ export function applyWebSocketEvent(state, event, { botUsername, chatId }) {
       const msgBot = event.bot_username;
       if (!msgBot) return { state, reloadBots: true };
 
-      const unread = bumpUnread(state, {
-        msgBot,
-        chatId: event.chat_id,
-        botUsername,
-        routeChatId: chatId,
-      });
-
       const key = threadKey(msgBot, event.chat_id);
       const next = {
         ...state,
-        unreadByChatId: unread.unreadByChatId,
-        unreadByBotUsername: unread.unreadByBotUsername,
         messagesByThread: appendToThread(state.messagesByThread, key, event),
         conversationsByBot: upsertConversationsForBot(state, msgBot, event),
       };

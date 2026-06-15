@@ -4,7 +4,13 @@ from ..domain.bot import BotNotFoundError
 from ..domain.bot.record import BotInboxItem
 from ..domain.chat import NoActiveConversationError
 from ..bootstrap import AppContext
-from ..models import ConversationSummary, Message, SendMessageRequest
+from ..models import (
+    ConversationSummary,
+    MarkThreadReadRequest,
+    MarkThreadReadResponse,
+    Message,
+    SendMessageRequest,
+)
 
 router = APIRouter()
 
@@ -49,17 +55,43 @@ def app_router(deps: AppContext) -> APIRouter:
     @router.get("/bots/{username}/messages", response_model=list[Message])
     async def get_messages(username: str, chat_id: str):
         try:
-            return await deps.chat_service.get_history(username, chat_id)
+            return await deps.chat_service.list_messages(username, chat_id)
         except BotNotFoundError:
             raise HTTPException(status_code=404, detail="Bot not found")
 
-    @router.post("/bots/{username}/messages", response_model=Message)
-    async def post_message(username: str, payload: SendMessageRequest):
+    @router.post(
+        "/bots/{username}/chats/{chat_id}/messages/read",
+        response_model=MarkThreadReadResponse,
+    )
+    async def mark_message_read(
+        username: str, chat_id: str, payload: MarkThreadReadRequest
+    ):
+        try:
+            marked_count = await deps.chat_service.mark_message_read(
+                username, chat_id, payload.read_at
+            )
+        except BotNotFoundError:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        except NoActiveConversationError:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return MarkThreadReadResponse(
+            chat_id=chat_id,
+            read_at=payload.read_at,
+            marked_count=marked_count,
+        )
+
+    @router.post(
+        "/bots/{username}/chats/{chat_id}/messages",
+        response_model=Message,
+    )
+    async def post_message(
+        username: str, chat_id: str, payload: SendMessageRequest
+    ):
         try:
             return await deps.chat_service.send_message(
                 username,
                 payload.id,
-                payload.chat_id,
+                chat_id,
                 payload.text,
                 payload.timestamp,
             )

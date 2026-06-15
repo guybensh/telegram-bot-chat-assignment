@@ -1,6 +1,7 @@
 import asyncio
+from datetime import datetime
 
-from ....models import Message, Status
+from ....models import Message, Sender, Status
 from .chat_repository import ChatRepository
 
 
@@ -64,6 +65,23 @@ class InMemoryChatRepository(ChatRepository):
                 self._conversations.get(bot_id, {}).get(chat_id, {}).values(),
             )
             return sorted(messages, key=lambda message: message.timestamp)
+
+    async def mark_message_read(
+        self, bot_id: str, chat_id: str, read_at: datetime
+    ) -> int:
+        async with self._lock:
+            messages = self._conversations.get(bot_id, {}).get(chat_id, {})
+            marked = 0
+            for message in messages.values():
+                if message.sender != Sender.USER:
+                    continue
+                if message.read_at is not None:
+                    continue
+                if message.timestamp > read_at:
+                    continue
+                message.read_at = read_at
+                marked += 1
+            return marked
 
     async def delete(self) -> None:
         async with self._lock:

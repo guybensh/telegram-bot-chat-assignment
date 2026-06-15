@@ -60,9 +60,19 @@ class ChatService:
     async def count_active_chats(self, bot_id: str) -> int:
         return len(await self._repository.list_active_chats(bot_id))
 
-    async def get_history(self, username: str, chat_id: str) -> list[Message]:
+    async def list_messages(self, username: str, chat_id: str) -> list[Message]:
         bot = await self._bot_service.get_by_username(username)
         return await self._repository.get_conversation(bot.bot_id, chat_id)
+
+    async def mark_message_read(
+        self, username: str, chat_id: str, read_at: datetime
+    ) -> int:
+        bot = await self._bot_service.get_by_username(username)
+        if not await self._repository.is_active_chat(bot.bot_id, chat_id):
+            raise NoActiveConversationError(chat_id)
+        return await self._repository.mark_message_read(
+            bot.bot_id, chat_id, read_at
+        )
 
     async def send_message(
         self,
@@ -115,13 +125,6 @@ class ChatService:
     async def handle_incoming_message(
         self, bot_id: str, incoming: IncomingMessage
     ) -> None:
-        if not await self._connection_manager.has_clients():
-            logger.info(
-                "[handle_incoming_message]: No agent connected; rejecting incoming from chat %s",
-                incoming.chat_id,
-            )
-            return
-
         try:
             bot = await self._bot_service.get_by_id(bot_id)
         except BotNotFoundError:
@@ -155,12 +158,21 @@ class ChatService:
         )
         if stored is None:
             return
+
         logger.info(
             "[handle_incoming_message]: Incoming [bot %s chat %s] %r",
             bot.username,
             incoming.chat_id,
             incoming.text[:200],
         )
+
+        if not await self._connection_manager.has_clients():
+            logger.info(
+                "[handle_incoming_message]: Stored incoming from chat %s; no agent connected to broadcast",
+                incoming.chat_id,
+            )
+            return
+
         await self._connection_manager.broadcast(
             {
                 "type": "message",

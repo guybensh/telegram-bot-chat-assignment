@@ -7,9 +7,7 @@ import {
 import { appendToThread, updateMessageStatus } from "./messages";
 import { normalizeMessage } from "./normalize";
 import { emptyInboxState } from "./state";
-import {
-  clearUnreadForThread,
-} from "./unread";
+import { markThreadReadInMessages } from "./unread";
 import { applyWebSocketEvent } from "./websocket";
 
 export const inboxReducer = (state, action) => {
@@ -84,17 +82,16 @@ export const inboxReducer = (state, action) => {
       return next;
     }
 
-    case "CLEAR_UNREAD_THREAD": {
-      const unread = clearUnreadForThread(
-        state.unreadByChatId,
-        state.unreadByBotUsername,
-        action.botUsername,
-        action.chatId
-      );
+    case "MARK_THREAD_READ": {
+      const { botUsername, chatId, readAt } = action;
       return {
         ...state,
-        unreadByChatId: unread.unreadByChatId,
-        unreadByBotUsername: unread.unreadByBotUsername,
+        messagesByThread: markThreadReadInMessages(
+          state.messagesByThread,
+          botUsername,
+          chatId,
+          readAt
+        ),
       };
     }
 
