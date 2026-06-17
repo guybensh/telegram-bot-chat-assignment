@@ -143,6 +143,14 @@ Run from `backend/` — the app loads `.env` from the repo root automatically.
 
 Health check: [http://localhost:8000/health](http://localhost:8000/health)
 
+**Tests** (from `backend/` with venv active):
+
+```bash
+python -m pytest tests/ -q
+```
+
+Uses `httpx` ASGI transport and `respx` to mock Telegram HTTP — no real network or bot required.
+
 ---
 
 ### Frontend

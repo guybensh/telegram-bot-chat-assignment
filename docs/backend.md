@@ -421,3 +421,19 @@ Open the inbox at [http://localhost:5173](http://localhost:5173). Message your
 bot from Telegram at any time — incoming messages are stored even if the inbox
 is closed. Connect the WebSocket (open the app) for live updates; otherwise
 select the bot and conversation to load stored history via REST.
+
+### Automated tests
+
+From `backend/` with the virtualenv active:
+
+```bash
+python -m pytest tests/ -q
+```
+
+- **`tests/test_api_e2e.py`** — REST E2E via `httpx.ASGITransport` (health, bots, send, mark-read).
+- **`tests/test_webhook_e2e.py`** — Telegram webhook path + secret middleware + persistence.
+- **`tests/test_chat_service.py`** — domain `ChatService` sunny paths and errors (fake `MessageProvider`).
+- **`tests/test_telegram_provider_http.py`** — `TelegramProvider` → `TelegramClient` HTTP mocked with **respx** (`sendMessage`, `getMe`).
+
+`app/factory.py` builds the ASGI app for tests **without** lifespan (no real Telegram listeners). Each test gets a fresh `AppContext`; `routes/api.py` builds a **new** `APIRouter` per `app_router(deps)` so multiple apps in one process do not share stale dependency closures.
+
