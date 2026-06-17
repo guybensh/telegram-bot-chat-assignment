@@ -12,10 +12,9 @@ from ..models import (
     SendMessageRequest,
 )
 
-router = APIRouter()
-
-
 def app_router(deps: AppContext) -> APIRouter:
+    router = APIRouter()
+
     @router.get("/health")
     async def health():
         return {"status": "ok"}
